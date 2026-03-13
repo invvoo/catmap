@@ -94,11 +94,9 @@ export default function Home() {
   const mapInstanceRef = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
   const [showForm, setShowForm] = useState(false);
-  const [formPos, setFormPos] = useState<{ lat: number; lng: number } | null>(null);
+  const [clickedPos, setClickedPos] = useState<{ lat: number; lng: number } | null>(null);
   const [selectedCat, setSelectedCat] = useState<any>(null);
   const [user, setUser] = useState<any>(null);
-  const [gpsLoading, setGpsLoading] = useState(false);
-  const [gpsError, setGpsError] = useState('');
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUser(data.user));
@@ -155,6 +153,11 @@ export default function Home() {
         mapId: process.env.NEXT_PUBLIC_GOOGLE_MAPS_ID,
       });
       mapInstanceRef.current = map;
+      map.addListener('click', (e: any) => {
+        if (!user) return alert('Please log in to report a cat!');
+        setClickedPos({ lat: e.latLng.lat(), lng: e.latLng.lng() });
+        setShowForm(true);
+      });
       loadCatPins();
     };
 
@@ -170,31 +173,6 @@ export default function Home() {
     setUser(null);
   }
 
-  function handleMetACat() {
-    if (!user) { window.location.href = '/login'; return; }
-    setGpsError('');
-    setGpsLoading(true);
-    if (!navigator.geolocation) {
-      setGpsError('GPS not supported by your browser.');
-      setGpsLoading(false);
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setGpsLoading(false);
-        setFormPos({ lat: position.coords.latitude, lng: position.coords.longitude });
-        setShowForm(true);
-        // Pan map to user location
-        mapInstanceRef.current?.panTo({ lat: position.coords.latitude, lng: position.coords.longitude });
-      },
-      () => {
-        setGpsLoading(false);
-        setGpsError('Could not get your location. Please allow GPS access.');
-      },
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
-  }
-
   return (
     <main style={{ width: '100vw', height: '100vh', position: 'relative' }}>
 
@@ -206,24 +184,7 @@ export default function Home() {
         boxShadow: '0 2px 10px rgba(0,0,0,0.1)'
       }}>
         <div style={{ fontSize: 20, fontWeight: 700 }}>🐱 CatMap</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <a href="/about" style={{ fontSize: 14, color: '#666', textDecoration: 'none', padding: '8px 4px', fontWeight: 400 }}>About</a>
-          <a href="/care" style={{ fontSize: 14, color: '#666', textDecoration: 'none', padding: '8px 4px', fontWeight: 400 }}>Care for Strays</a>
-          {gpsError && (
-            <span style={{ fontSize: 13, color: '#F44336', maxWidth: 220 }}>{gpsError}</span>
-          )}
-          <button
-            onClick={handleMetACat}
-            disabled={gpsLoading}
-            style={{
-              padding: '9px 18px', borderRadius: 8, border: 'none',
-              background: gpsLoading ? '#ffccbc' : '#FF6B6B',
-              color: 'white', fontWeight: 700, fontSize: 14, cursor: gpsLoading ? 'default' : 'pointer',
-              display: 'flex', alignItems: 'center', gap: 6,
-            }}
-          >
-            {gpsLoading ? '📍 Getting location...' : '🐱 I met a cat!'}
-          </button>
+        <div>
           {user ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <span style={{ fontSize: 14, color: '#555' }}>{user.email}</span>
@@ -236,7 +197,7 @@ export default function Home() {
             </div>
           ) : (
             <a href="/login" style={{
-              padding: '8px 20px', borderRadius: 8, background: '#333',
+              padding: '8px 20px', borderRadius: 8, background: '#FF6B6B',
               color: 'white', textDecoration: 'none', fontWeight: 600, fontSize: 14
             }}>
               Log in
@@ -247,11 +208,11 @@ export default function Home() {
 
       <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
 
-      {showForm && formPos && (
+      {showForm && clickedPos && (
         <AddCatForm
-          lat={formPos.lat}
-          lng={formPos.lng}
-          onClose={() => { setShowForm(false); setFormPos(null); }}
+          lat={clickedPos.lat}
+          lng={clickedPos.lng}
+          onClose={() => setShowForm(false)}
           onSaved={() => loadCatPins()}
         />
       )}
