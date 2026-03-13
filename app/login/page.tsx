@@ -1,13 +1,17 @@
 // PAGE: Login / Signup (app/login/page.tsx → route: /login)
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+}
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -19,13 +23,13 @@ export default function LoginPage() {
   async function handleSubmit() {
     setLoading(true); setError('');
     if (isSignup) {
-      const { error } = await supabase.auth.signUp({ email, password });
+      const { error } = await getSupabase().auth.signUp({ email, password });
       if (error) { setError(error.message); setLoading(false); return; }
       // Auto sign in after signup
-      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+      const { error: signInError } = await getSupabase().auth.signInWithPassword({ email, password });
       if (signInError) { setError(signInError.message); setLoading(false); return; }
     } else {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { error } = await getSupabase().auth.signInWithPassword({ email, password });
       if (error) { setError(error.message); setLoading(false); return; }
     }
     setLoading(false);

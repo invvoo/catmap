@@ -1,13 +1,17 @@
 // PAGE: Lost Cat Poster Generator (app/poster/page.tsx → route: /poster)
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useState, useEffect, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+}
 
 export default function PosterPage() {
   const [cat, setCat] = useState<any>(null);
@@ -19,7 +23,7 @@ export default function PosterPage() {
     const params = new URLSearchParams(window.location.search);
     const catId = params.get('catId');
     if (!catId) { setError('No cat ID provided.'); setLoading(false); return; }
-    supabase.from('cats').select('*').eq('id', catId).single().then(({ data, error: err }) => {
+    getSupabase().from('cats').select('*').eq('id', catId).single().then(({ data, error: err }) => {
       if (err || !data) { setError('Cat not found.'); }
       else setCat(data);
       setLoading(false);
