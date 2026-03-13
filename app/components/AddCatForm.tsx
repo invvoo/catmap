@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(
@@ -203,15 +203,23 @@ export default function AddCatForm({ lat, lng, onClose, onSaved }: AddCatFormPro
   const [nearbyCats, setNearbyCats] = useState<NearbyCat[]>([]);
   const [nearbyDismissed, setNearbyDismissed] = useState(false);
   const [saveMatches, setSaveMatches] = useState<NearbyCat[]>([]);
+  const [lostMatches, setLostMatches] = useState<NearbyCat[]>([]);
   const [showSaveMatchModal, setShowSaveMatchModal] = useState(false);
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
   const [sightingLoading, setSightingLoading] = useState(false);
   const [sightingError, setSightingError] = useState('');
 
-  // Load nearby cats on mount
-  useEffect(() => {
-    loadNearbyCats(lat, lng);
-  }, []);
+  // Crop state
+  const [showCrop, setShowCrop] = useState(false);
+  const [cropSrc, setCropSrc] = useState<string | null>(null);
+  const [cropX, setCropX] = useState(0);
+  const [cropY, setCropY] = useState(0);
+  const [cropW, setCropW] = useState(0);
+  const [cropH, setCropH] = useState(0);
+  const cropRef = useRef({ x: 0, y: 0, w: 0, h: 0 });
+  const dragStartRef = useRef({ x: 0, y: 0 });
+  const [imgNatural, setImgNatural] = useState({ w: 0, h: 0 });
+  const [imgDisplay, setImgDisplay] = useState({ w: 0, h: 0 });
 
   async function loadNearbyCats(checkLat: number, checkLng: number, formAttrs?: any) {
     const { data, error } = await supabase.from('cats').select('id, name, image_url, lat, lng, attributes');
@@ -236,23 +244,79 @@ export default function AddCatForm({ lat, lng, onClose, onSaved }: AddCatFormPro
   async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    setPhotoFile(file);
-    setPhotoPreview(URL.createObjectURL(file));
     setAiError('');
     setAiApplied(false);
     const location = await getExifLocation(file);
     const useLat = location ? location.lat : lat;
     const useLng = location ? location.lng : lng;
-    if (location) {
-      setExtractedLat(location.lat);
-      setExtractedLng(location.lng);
-      setLocationSource('photo');
-    } else {
-      setLocationSource('map');
-    }
+    if (location) { setExtractedLat(location.lat); setExtractedLng(location.lng); setLocationSource('photo'); }
+    else { setLocationSource('map'); }
+    // Open crop UI
+    const url = URL.createObjectURL(file);
+    setCropSrc(url);
+    setShowCrop(true);
+    // Store original file temporarily for AI after crop
+    setPhotoFile(file);
     loadNearbyCats(useLat, useLng);
-    // Auto-run AI analysis
-    runAnalyse(file, useLat, useLng);
+  }
+
+  const draggingRef = useRef(false);
+  const cropContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function onMouseUp() { draggingRef.current = false; }
+    window.addEventListener('mouseup', onMouseUp);
+    return () => window.removeEventListener('mouseup', onMouseUp);
+  }, []);
+
+  function handleCropMouseDown(e: React.MouseEvent<HTMLDivElement>) {
+    draggingRef.current = true;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    setCropX(x); setCropY(y); setCropW(0); setCropH(0);
+    cropRef.current = { x, y, w: 0, h: 0 };
+    dragStartRef.current = { x, y };
+  }
+
+  function handleCropMouseMove(e: React.MouseEvent<HTMLDivElement>) {
+    if (!draggingRef.current) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
+    const y = Math.max(0, Math.min(e.clientY - rect.top, rect.height));
+    const nx = Math.min(x, dragStartRef.current.x);
+    const ny = Math.min(y, dragStartRef.current.y);
+    const nw = Math.abs(x - dragStartRef.current.x);
+    const nh = Math.abs(y - dragStartRef.current.y);
+    setCropX(nx); setCropY(ny); setCropW(nw); setCropH(nh);
+    cropRef.current = { x: nx, y: ny, w: nw, h: nh };
+  }
+
+  async function applyCrop() {
+    if (!cropSrc || !photoFile) return;
+    const img = new Image();
+    img.src = cropSrc;
+    await new Promise(r => { img.onload = r; });
+    const scaleX = img.naturalWidth / imgDisplay.w;
+    const scaleY = img.naturalHeight / imgDisplay.h;
+    const canvas = document.createElement('canvas');
+    const { x: rX, y: rY, w: rW, h: rH } = cropRef.current;
+    const cw = rW > 10 ? rW * scaleX : img.naturalWidth;
+    const ch = rH > 10 ? rH * scaleY : img.naturalHeight;
+    const cx = rW > 10 ? rX * scaleX : 0;
+    const cy = rH > 10 ? rY * scaleY : 0;
+    canvas.width = cw; canvas.height = ch;
+    const ctx = canvas.getContext('2d')!;
+    ctx.drawImage(img, cx, cy, cw, ch, 0, 0, cw, ch);
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const croppedFile = new File([blob], photoFile.name, { type: 'image/jpeg' });
+      setPhotoFile(croppedFile);
+      setPhotoPreview(URL.createObjectURL(croppedFile));
+      setShowCrop(false);
+      const useLat = extractedLat; const useLng = extractedLng;
+      runAnalyse(croppedFile, useLat, useLng);
+    }, 'image/jpeg', 0.9);
   }
 
   async function runAnalyse(file: File, useLat: number, useLng: number) {
@@ -333,24 +397,38 @@ export default function AddCatForm({ lat, lng, onClose, onSaved }: AddCatFormPro
   }
 
   async function handleSubmit() {
-    // Only run match check if AI has run
-    if (aiApplied) {
-      const { data } = await supabase.from('cats').select('id, name, image_url, lat, lng, attributes');
-      if (data) {
-        const currentAttrs = { coat, eyes, tnr, gender, age, tail };
-        const matches = data
-          .map((cat) => {
-            const distance = distanceFeet(extractedLat, extractedLng, cat.lat, cat.lng);
-            const { score, label, fields } = scoreMatch(currentAttrs, cat.attributes);
-            return { ...cat, distance, matchScore: score, matchLabel: label, matchedFields: fields };
-          })
-          .filter((cat) => cat.distance <= 420 && cat.matchScore >= 4)
-          .sort((a, b) => b.matchScore - a.matchScore || a.distance - b.distance);
-        if (matches.length > 0) {
-          setSaveMatches(matches);
-          setShowSaveMatchModal(true);
-          return;
-        }
+    const { data } = await supabase.from('cats').select('id, name, image_url, lat, lng, status, attributes');
+    if (data) {
+      const currentAttrs = { coat, eyes, tnr, gender, age, tail };
+      const MATCH_RADIUS = 10560; // 2 miles in feet
+
+      // Priority: lost cats nearby
+      const lost = data
+        .filter(cat => cat.status === 'lost')
+        .map(cat => {
+          const distance = distanceFeet(extractedLat, extractedLng, cat.lat, cat.lng);
+          const { score, label, fields } = scoreMatch(currentAttrs, cat.attributes);
+          return { ...cat, distance, matchScore: score, matchLabel: label, matchedFields: fields };
+        })
+        .filter(cat => cat.distance <= MATCH_RADIUS)
+        .sort((a, b) => b.matchScore - a.matchScore || a.distance - b.distance);
+
+      // Regular matches (non-lost)
+      const matches = data
+        .filter(cat => cat.status !== 'lost')
+        .map(cat => {
+          const distance = distanceFeet(extractedLat, extractedLng, cat.lat, cat.lng);
+          const { score, label, fields } = scoreMatch(currentAttrs, cat.attributes);
+          return { ...cat, distance, matchScore: score, matchLabel: label, matchedFields: fields };
+        })
+        .filter(cat => cat.distance <= MATCH_RADIUS && cat.matchScore >= 4)
+        .sort((a, b) => b.matchScore - a.matchScore || a.distance - b.distance);
+
+      if (lost.length > 0 || matches.length > 0) {
+        setLostMatches(lost);
+        setSaveMatches(matches);
+        setShowSaveMatchModal(true);
+        return;
       }
     }
     await doSave();
@@ -401,7 +479,15 @@ export default function AddCatForm({ lat, lng, onClose, onSaved }: AddCatFormPro
         {/* Photo */}
         <label style={labelStyle}>Photo (optional)</label>
         <input type="file" accept="image/*" onChange={handlePhotoChange} style={{ marginBottom: 8, width: '100%' }} />
-        {photoPreview && <img src={photoPreview} alt="preview" style={{ width: '100%', borderRadius: 8, marginBottom: 8, maxHeight: 180, objectFit: 'cover' }} />}
+        {photoPreview && (
+          <div style={{ position: 'relative', marginBottom: 8 }}>
+            <img src={photoPreview} alt="preview" style={{ width: '100%', borderRadius: 8, maxHeight: 180, objectFit: 'cover', display: 'block' }} />
+            <button onClick={() => { setCropSrc(photoPreview); setShowCrop(true); setCropW(0); setCropH(0); }}
+              style={{ position: 'absolute', bottom: 8, right: 8, background: 'rgba(0,0,0,0.6)', color: 'white', border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 12, cursor: 'pointer' }}>
+              ✂️ Crop
+            </button>
+          </div>
+        )}
         {photoFile && (
           <p style={{ fontSize: 12, color: locationSource === 'photo' ? '#4CAF50' : '#FF9800', marginBottom: 8 }}>
             {locationSource === 'photo' ? '✅ GPS extracted from photo!' : '⚠️ No GPS in photo — using map location'}
@@ -560,76 +646,155 @@ export default function AddCatForm({ lat, lng, onClose, onSaved }: AddCatFormPro
         </div>
       </div>
 
+      {/* ── CROP MODAL ── */}
+      {showCrop && cropSrc && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.8)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 3000 }}>
+          <div style={{ background: 'white', borderRadius: 16, padding: 20, width: 460, maxWidth: '95vw' }}>
+            <h2 style={{ margin: '0 0 8px', fontSize: 18 }}>✂️ Crop Photo</h2>
+            <p style={{ fontSize: 13, color: '#888', margin: '0 0 12px' }}>Drag to select the area you want to keep. Leave empty to use full photo.</p>
+            <div
+              ref={cropContainerRef}
+              style={{ position: 'relative', userSelect: 'none', cursor: 'crosshair', lineHeight: 0 }}
+              onMouseDown={handleCropMouseDown}
+              onMouseMove={handleCropMouseMove}
+            >
+              <img
+                src={cropSrc} alt="crop"
+                style={{ width: '100%', borderRadius: 8, display: 'block' }}
+                onLoad={e => {
+                  const img = e.currentTarget;
+                  setImgNatural({ w: img.naturalWidth, h: img.naturalHeight });
+                  setImgDisplay({ w: img.offsetWidth, h: img.offsetHeight });
+                }}
+              />
+              {cropW > 5 && cropH > 5 && (
+                <div style={{
+                  position: 'absolute', left: cropX, top: cropY, width: cropW, height: cropH,
+                  border: '2px solid #FF6B6B', background: 'rgba(255,107,107,0.15)', pointerEvents: 'none',
+                }} />
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+              <button onClick={() => { setShowCrop(false); setCropW(0); setCropH(0); if (!photoPreview) { setPhotoFile(null); } }}
+                style={{ flex: 1, padding: 11, borderRadius: 8, border: '1px solid #ddd', background: 'white', cursor: 'pointer', fontSize: 14 }}>
+                Cancel
+              </button>
+              <button onClick={applyCrop}
+                style={{ flex: 1, padding: 11, borderRadius: 8, border: 'none', background: '#FF6B6B', color: 'white', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
+                {cropRef.current.w > 5 && cropRef.current.h > 5 ? 'Apply Crop' : 'Use Full Photo'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── SAVE MATCH MODAL ── */}
       {showSaveMatchModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>
-          <div style={{ background: 'white', borderRadius: 16, padding: 28, width: 420, boxShadow: '0 20px 60px rgba(0,0,0,0.4)', maxHeight: '80vh', overflowY: 'auto' }}>
-            <h2 style={{ margin: '0 0 6px', fontSize: 20 }}>🐱 Possible duplicate?</h2>
-            <p style={{ color: '#666', fontSize: 14, margin: '0 0 6px', lineHeight: 1.5 }}>
-              We found {saveMatches.length} cat{saveMatches.length > 1 ? 's' : ''} nearby that match{saveMatches.length === 1 ? 'es' : ''} this description.
-            </p>
-            <p style={{ color: '#999', fontSize: 13, margin: '0 0 16px' }}>Tap a cat to select it and log a sighting instead of saving a new entry.</p>
+          <div style={{ background: 'white', borderRadius: 16, padding: 28, width: 420, boxShadow: '0 20px 60px rgba(0,0,0,0.4)', maxHeight: '85vh', overflowY: 'auto' }}>
 
-            {saveMatches.map((cat) => {
-              const isSelected = selectedMatchId === cat.id;
-              return (
-                <div
-                  key={cat.id}
-                  onClick={() => setSelectedMatchId(isSelected ? null : cat.id)}
-                  style={{
-                    display: 'flex', gap: 12, alignItems: 'center', marginBottom: 10,
-                    borderRadius: 10, padding: 12, cursor: 'pointer',
-                    background: isSelected ? '#fff8e1' : '#f9f9f9',
-                    border: isSelected ? '2px solid #FF9800' : '2px solid transparent',
-                    transition: 'all 0.15s',
-                  }}
-                >
-                  {cat.image_url ? (
-                    <img src={cat.image_url} alt={cat.name} style={{ width: 56, height: 56, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, border: isSelected ? '2px solid #FF9800' : '2px solid transparent' }} />
-                  ) : (
-                    <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#eee', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, flexShrink: 0 }}>🐱</div>
-                  )}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
-                      <span style={{ fontWeight: 700, fontSize: 15 }}>{cat.name}</span>
-                      <span style={{
-                        fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10,
-                        background: cat.matchScore >= 7 ? '#F44336' : '#FF9800', color: 'white',
-                      }}>{cat.matchLabel}</span>
-                      {isSelected && <span style={{ fontSize: 11, color: '#FF9800', fontWeight: 700 }}>✓ Selected</span>}
-                    </div>
-                    <div style={{ fontSize: 12, color: '#888', marginBottom: 2 }}>{Math.round(cat.distance)} ft away</div>
-                    <div style={{ fontSize: 12, color: '#555' }}>Matches: {cat.matchedFields.join(', ')}</div>
-                    {cat.attributes?.coat && <div style={{ fontSize: 12, color: '#777', marginTop: 2, fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cat.attributes.coat}</div>}
-                  </div>
+            {/* Lost cat priority section */}
+            {lostMatches.length > 0 && (
+              <div style={{ background: '#FFF3F3', border: '2px solid #F44336', borderRadius: 12, padding: 14, marginBottom: 20 }}>
+                <div style={{ fontSize: 14, fontWeight: 800, color: '#F44336', marginBottom: 6 }}>
+                  🚨 {lostMatches.length} LOST CAT{lostMatches.length > 1 ? 'S' : ''} NEARBY — Is this them?
                 </div>
-              );
-            })}
+                <p style={{ fontSize: 13, color: '#888', margin: '0 0 10px' }}>Please check carefully before saving a new entry.</p>
+                {lostMatches.map((cat) => {
+                  const isSelected = selectedMatchId === cat.id;
+                  return (
+                    <div key={cat.id}
+                      style={{ marginBottom: 8, borderRadius: 10, border: isSelected ? '2px solid #F44336' : '2px solid #ffcdd2', background: isSelected ? '#fff0f0' : 'white', overflow: 'hidden', transition: 'all 0.15s' }}>
+                      <div onClick={() => setSelectedMatchId(isSelected ? null : cat.id)}
+                        style={{ display: 'flex', gap: 12, alignItems: 'center', padding: 10, cursor: 'pointer' }}>
+                        {cat.image_url
+                          ? <img src={cat.image_url} alt={cat.name} style={{ width: 52, height: 52, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+                          : <div style={{ width: 52, height: 52, borderRadius: '50%', background: '#eee', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>🐱</div>
+                        }
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                            <span style={{ fontWeight: 700, fontSize: 15 }}>{cat.name}</span>
+                            <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 10, background: '#F44336', color: 'white' }}>🚨 LOST</span>
+                            {isSelected && <span style={{ fontSize: 11, color: '#F44336', fontWeight: 700 }}>✓ Selected</span>}
+                          </div>
+                          <div style={{ fontSize: 12, color: '#888' }}>{Math.round(cat.distance)} ft away{cat.matchedFields.length > 0 ? ` · Matches: ${cat.matchedFields.join(', ')}` : ''}</div>
+                        </div>
+                      </div>
+                      <div style={{ borderTop: '1px solid #ffcdd2', display: 'flex' }}>
+                        <a href={`/cat/${cat.id}`} target="_blank" rel="noopener noreferrer"
+                          style={{ flex: 1, padding: '7px 0', textAlign: 'center', fontSize: 12, fontWeight: 600, color: '#F44336', textDecoration: 'none', background: '#fff5f5' }}>
+                          👁️ Inspect profile
+                        </a>
+                        <button onClick={() => setSelectedMatchId(isSelected ? null : cat.id)}
+                          style={{ flex: 1, padding: '7px 0', border: 'none', borderLeft: '1px solid #ffcdd2', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: isSelected ? '#F44336' : 'white', color: isSelected ? 'white' : '#555' }}>
+                          {isSelected ? '✓ Matched' : 'Select as match'}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Regular matches */}
+            {saveMatches.length > 0 && (
+              <>
+                <h2 style={{ margin: '0 0 6px', fontSize: 20 }}>🐱 Possible duplicate?</h2>
+                <p style={{ color: '#666', fontSize: 14, margin: '0 0 6px', lineHeight: 1.5 }}>
+                  We found {saveMatches.length} cat{saveMatches.length > 1 ? 's' : ''} nearby that match this description.
+                </p>
+                <p style={{ color: '#999', fontSize: 13, margin: '0 0 16px' }}>Tap a cat to select it and log a sighting instead.</p>
+                {saveMatches.map((cat) => {
+                  const isSelected = selectedMatchId === cat.id;
+                  return (
+                    <div key={cat.id}
+                      style={{ marginBottom: 10, borderRadius: 10, border: isSelected ? '2px solid #FF9800' : '2px solid #eee', background: isSelected ? '#fff8e1' : '#f9f9f9', overflow: 'hidden', transition: 'all 0.15s' }}>
+                      <div style={{ display: 'flex', gap: 12, alignItems: 'center', padding: 12 }}>
+                        {cat.image_url
+                          ? <img src={cat.image_url} alt={cat.name} style={{ width: 56, height: 56, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+                          : <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#eee', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, flexShrink: 0 }}>🐱</div>
+                        }
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+                            <span style={{ fontWeight: 700, fontSize: 15 }}>{cat.name}</span>
+                            <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: cat.matchScore >= 7 ? '#F44336' : '#FF9800', color: 'white' }}>{cat.matchLabel}</span>
+                          </div>
+                          <div style={{ fontSize: 12, color: '#888', marginBottom: 2 }}>{Math.round(cat.distance)} ft away · Matches: {cat.matchedFields.join(', ')}</div>
+                          {cat.attributes?.coat && <div style={{ fontSize: 12, color: '#777', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cat.attributes.coat}</div>}
+                        </div>
+                      </div>
+                      <div style={{ borderTop: '1px solid #eee', display: 'flex' }}>
+                        <a href={`/cat/${cat.id}`} target="_blank" rel="noopener noreferrer"
+                          style={{ flex: 1, padding: '7px 0', textAlign: 'center', fontSize: 12, fontWeight: 600, color: '#FF9800', textDecoration: 'none', background: '#fffaf0' }}>
+                          👁️ Inspect profile
+                        </a>
+                        <button onClick={() => setSelectedMatchId(isSelected ? null : cat.id)}
+                          style={{ flex: 1, padding: '7px 0', border: 'none', borderLeft: '1px solid #eee', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: isSelected ? '#FF9800' : 'white', color: isSelected ? 'white' : '#555' }}>
+                          {isSelected ? '✓ Matched' : 'Select as match'}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </>
+            )}
 
             {sightingError && <div style={{ background: '#fff3f3', border: '1px solid #ffcdd2', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 13, color: '#c62828' }}>⚠️ {sightingError}</div>}
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 8 }}>
               {selectedMatchId && (
-                <button
-                  onClick={handleLogSighting}
-                  disabled={sightingLoading}
-                  style={{ width: '100%', padding: 13, borderRadius: 8, border: 'none', background: '#FF9800', color: 'white', cursor: 'pointer', fontSize: 14, fontWeight: 700 }}
-                >
+                <button onClick={handleLogSighting} disabled={sightingLoading}
+                  style={{ width: '100%', padding: 13, borderRadius: 8, border: 'none', background: lostMatches.find(c => c.id === selectedMatchId) ? '#F44336' : '#FF9800', color: 'white', cursor: 'pointer', fontSize: 14, fontWeight: 700 }}>
                   {sightingLoading ? '📍 Getting GPS...' : '📍 Log sighting for this cat'}
                 </button>
               )}
               <div style={{ display: 'flex', gap: 10 }}>
-                <button
-                  onClick={() => { setShowSaveMatchModal(false); setSelectedMatchId(null); setSightingError(''); }}
-                  style={{ flex: 1, padding: 12, borderRadius: 8, border: '1px solid #ddd', background: 'white', cursor: 'pointer', fontSize: 14 }}
-                >
+                <button onClick={() => { setShowSaveMatchModal(false); setSelectedMatchId(null); setSightingError(''); }}
+                  style={{ flex: 1, padding: 12, borderRadius: 8, border: '1px solid #ddd', background: 'white', cursor: 'pointer', fontSize: 14 }}>
                   ← Go back
                 </button>
-                <button
-                  onClick={() => { setShowSaveMatchModal(false); setSelectedMatchId(null); doSave(); }}
-                  disabled={saving}
-                  style={{ flex: 1, padding: 12, borderRadius: 8, border: 'none', background: '#FF6B6B', color: 'white', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}
-                >
+                <button onClick={() => { setShowSaveMatchModal(false); setSelectedMatchId(null); doSave(); }} disabled={saving}
+                  style={{ flex: 1, padding: 12, borderRadius: 8, border: 'none', background: '#FF6B6B', color: 'white', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
                   {saving ? 'Saving...' : 'Save as new cat'}
                 </button>
               </div>

@@ -1,0 +1,16 @@
+clicking away from cat profile should close the profile. 
+matching cats nearby still not working.
+picture of cat is cropped poorly, should let user crop how much of the picture shows.
+strays should not be marked as lost.
+if a cat being uploaded matches any of the listed lost cats, it should be priority to see if it is indeed that cat.
+you should be able to view profiles of users.
+add verification hub so that people who feed cats, take them to the vet, or do TNR can earn bounty.
+got to make bounty program.
+add feed stray button to stray profiles. people can donate to feed them.
+messaging system between users.
+format so that a cat has a page, a community page where people can say whatever, like an open forum. 
+map should be more zoomed it, lets say 2 mile radius.
+map should be like half the page, with community feed below it that lists near you, recent, in need cat cards.Community Updates. "Share a sighting or update e.g., Saw them by the park today, looking healthy!"
+cats profile should have community care if its a stray. there should be I'm Interested in Adopting function as well. list the vet care and food fund for donations for an individual cat.
+owners notes if its owned.
+all cats profile should have photo gallery of all the uploads
