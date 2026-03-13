@@ -1,12 +1,12 @@
 // @ts-nocheck
 // PAGE: Cat Profile (app/cat/[id]/page.tsx → route: /cat/[id])
 'use client';
+import { supabase } from '../../lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
 import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'next/navigation';
-import { createClient } from '@supabase/supabase-js';
 
 function getSupabase() {
   return createClient(
