@@ -1,10 +1,10 @@
 // PAGE: Login / Signup (app/login/page.tsx → route: /login)
 'use client';
+import { supabase } from '../../lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
 import { useState } from 'react';
-import { createClient } from '@supabase/supabase-js';
 
 function getSupabase() {
   return createClient(

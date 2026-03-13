@@ -1,10 +1,10 @@
 // PAGE: Lost Cat Poster Generator (app/poster/page.tsx → route: /poster)
 'use client';
+import { supabase } from '../../lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
 import { useState, useEffect, useRef } from 'react';
-import { createClient } from '@supabase/supabase-js';
 
 function getSupabase() {
   return createClient(
