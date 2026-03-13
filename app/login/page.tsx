@@ -2,8 +2,6 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import AddCatForm from '../components/AddCatForm';
-import CatProfile from '../components/CatProfile';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -193,7 +191,6 @@ export default function Home() {
       <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
 
       {showForm && clickedPos && (
-        <AddCatForm
           lat={clickedPos.lat}
           lng={clickedPos.lng}
           onClose={() => setShowForm(false)}
@@ -201,7 +198,6 @@ export default function Home() {
         />
       )}
       {selectedCat && (
-        <CatProfile
           cat={selectedCat}
           onClose={() => setSelectedCat(null)}
           onStatusChange={() => loadCatPins()}
