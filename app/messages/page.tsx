@@ -1,12 +1,31 @@
-// @ts-nocheck
 // PAGE: Messages — Lost Cat Contact (app/messages/page.tsx → route: /messages)
+// @ts-nocheck
 'use client';
+export const dynamic = 'force-dynamic';
 import { supabase } from '../../lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+}
+const supabase = new Proxy({} as ReturnType<typeof createClient>, {
+  get(_target, prop) {
+    const client = getSupabase() as any;
+    const val = client[prop];
+    if (typeof val === 'function') return val.bind(client);
+    if (typeof val === 'object' && val !== null) {
+      return new Proxy(val, {
+        get(_t2, prop2) {
+          const val2 = val[prop2];
+          return typeof val2 === 'function' ? val2.bind(val) : val2;
+        }
+      });
     }
     return val;
   }
@@ -35,7 +54,6 @@ export default function MessagesPage() {
   const [profileCache, setProfileCache] = useState<Record<string, any>>({});
   const threadEndRef = useRef<HTMLDivElement>(null);
   const channelRef = useRef<any>(null);
-
 
   // ── NAVBAR STATE ──
   const [navUser, setNavUser] = useState<any>(null);

@@ -1,5 +1,7 @@
 // PAGE: Login / Signup (app/login/page.tsx → route: /login)
+// @ts-nocheck
 'use client';
+export const dynamic = 'force-dynamic';
 import { supabase } from '../../lib/supabase';
 
 export const dynamic = 'force-dynamic';

@@ -1,7 +1,8 @@
-// @ts-nocheck
 // PAGE: User Profile (app/profile/[id]/page.tsx → route: /profile/[id])
+// @ts-nocheck
 'use client';
-import { supabase } from '../../lib/supabase';
+export const dynamic = 'force-dynamic';
+import { supabase } from '../../../lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,7 +15,6 @@ function getSupabase() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   );
 }
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const supabase = new Proxy({} as ReturnType<typeof createClient>, {
   get(_target, prop) {
     const client = getSupabase() as any;
@@ -91,7 +91,6 @@ export default function ProfilePage() {
   // Avatar upload
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const [avatarUploading, setAvatarUploading] = useState(false);
-
 
   // ── NAVBAR STATE ──
   const [navUser, setNavUser] = useState<any>(null);

@@ -1,5 +1,7 @@
 // PAGE: Lost Cat Poster Generator (app/poster/page.tsx → route: /poster)
+// @ts-nocheck
 'use client';
+export const dynamic = 'force-dynamic';
 import { supabase } from '../../lib/supabase';
 
 export const dynamic = 'force-dynamic';
