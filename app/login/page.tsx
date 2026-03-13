@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import AddCatForm from './components/AddCatForm';
-import CatProfile from './components/CatProfile';
+import AddCatForm from '../components/AddCatForm';
+import CatProfile from '../components/CatProfile';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
