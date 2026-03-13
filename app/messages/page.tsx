@@ -1,6 +1,8 @@
 // PAGE: Messages — Lost Cat Contact (app/messages/page.tsx → route: /messages)
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createClient } from '@supabase/supabase-js';
 

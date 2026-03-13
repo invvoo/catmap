@@ -1,6 +1,8 @@
 // PAGE: Main Map + Community Feed (app/page.tsx → route: /)
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { MarkerClusterer, SuperClusterAlgorithm } from '@googlemaps/markerclusterer';
 import { createClient } from '@supabase/supabase-js';

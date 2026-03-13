@@ -1,6 +1,8 @@
 // PAGE: User Profile (app/profile/[id]/page.tsx → route: /profile/[id])
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';

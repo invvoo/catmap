@@ -1,6 +1,8 @@
 // PAGE: Cat Profile (app/cat/[id]/page.tsx → route: /cat/[id])
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
