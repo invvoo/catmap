@@ -151,6 +151,7 @@ export default function Home() {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [userProfile, setUserProfile] = useState<any>(null);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [notifUnread, setNotifUnread] = useState(0);
   const [allCats, setAllCats] = useState<any[]>([]);
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [feedCats, setFeedCats] = useState<any[]>([]);
@@ -159,11 +160,11 @@ export default function Home() {
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       setUser(data.user);
-        if (data.user) { loadUserProfile(data.user.id); loadUnreadCount(data.user.id); }
+        if (data.user) { loadUserProfile(data.user.id); loadUnreadCount(data.user.id); loadNotifUnread(data.user.id); }
     });
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
-      if (session?.user) { loadUserProfile(session.user.id); loadUnreadCount(session.user.id); }
+      if (session?.user) { loadUserProfile(session.user.id); loadUnreadCount(session.user.id); loadNotifUnread(session.user.id); }
       else setUserProfile(null);
     });
     if (navigator.geolocation) {
@@ -184,6 +185,15 @@ export default function Home() {
       .sort((a, b) => (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9) || a._dist - b._dist);
     setFeedCats(nearby);
   }, [allCats, userLocation]);
+
+  async function loadNotifUnread(userId: string) {
+    const { count } = await supabase
+      .from('notifications')
+      .select('id', { count: 'exact' })
+      .eq('user_id', userId)
+      .eq('read', false);
+    setNotifUnread(count || 0);
+  }
 
   async function loadUnreadCount(userId: string) {
     const { count } = await supabase
@@ -593,6 +603,17 @@ export default function Home() {
                       {unreadCount > 0 && (
                         <span style={{ background: '#FF6B6B', color: 'white', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 800 }}>
                           {unreadCount > 9 ? '9+' : unreadCount}
+                        </span>
+                      )}
+                    </a>
+                    <a href="/notifications" onClick={() => setShowUserMenu(false)}
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 16px', fontSize: 13, fontWeight: 600, color: '#333', textDecoration: 'none', borderBottom: '1px solid #f5f5f5' }}
+                      onMouseEnter={e => (e.currentTarget.style.background = '#f9f9f9')}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'white')}>
+                      <span>🔔 Notifications</span>
+                      {notifUnread > 0 && (
+                        <span style={{ background: '#FF6B6B', color: 'white', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 800 }}>
+                          {notifUnread > 9 ? '9+' : notifUnread}
                         </span>
                       )}
                     </a>

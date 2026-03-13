@@ -197,6 +197,11 @@ export default function MessagesPage() {
     setNewMessage('');
     if (msg) {
       setMessages(prev => [...prev, msg]);
+      // Notify recipient
+      await supabase.from('notifications').insert({
+        user_id: selectedUserId, cat_id: null, type: 'message',
+        message: `✉️ You have a new message`,
+      });
       // Update/add conversation in list
       setConversations(prev => {
         const exists = prev.find(c => c.otherId === selectedUserId);

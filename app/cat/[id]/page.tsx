@@ -341,6 +341,13 @@ export default function CatPage() {
         else {
           setSightingSuccess(true);
           setSightingPhoto(null); setSightingPhotoPreview(null);
+          // Notify cat owner
+          if (cat.owner_id && cat.owner_id !== user.id) {
+            await supabase.from('notifications').insert({
+              user_id: cat.owner_id, cat_id: catId, type: 'sighting',
+              message: `📍 Someone spotted ${cat.name}!`,
+            });
+          }
           await loadSightings(); await loadGallery();
           setTimeout(() => { setShowSightingModal(false); setSightingSuccess(false); }, 2000);
         }
@@ -357,6 +364,17 @@ export default function CatPage() {
       method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}` },
       body: JSON.stringify({ cat_id: catId, cat_name: cat.name }),
     });
+    // Notify all unique previous sighters
+    const { data: sighters } = await supabase.from('sightings').select('user_id').eq('cat_id', catId);
+    const uniqueSighters = [...new Set((sighters || []).map((s: any) => s.user_id))].filter(id => id !== user?.id);
+    if (uniqueSighters.length > 0) {
+      await supabase.from('notifications').insert(
+        uniqueSighters.map(uid => ({
+          user_id: uid, cat_id: catId, type: 'lost',
+          message: `🚨 ${cat.name} has been marked as lost! You've spotted this cat before.`,
+        }))
+      );
+    }
     setCat((prev: any) => ({ ...prev, previous_status: prev.status, status: 'lost' }));
     setLostSaving(false); setShowLostModal(false);
   }
