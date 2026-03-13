@@ -1,6 +1,7 @@
+// PAGE: Login / Signup (app/login/page.tsx → route: /login)
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(
@@ -8,201 +9,73 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-const statusColors: Record<string, string> = {
-  stray: '#FF9800',
-  community: '#4CAF50',
-  lost: '#F44336',
-  homed: '#2196F3',
-};
+export default function LoginPage() {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [isSignup, setIsSignup] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-function createCatMarkerElement(cat: any): HTMLElement {
-  const color = statusColors[cat.status] || '#888';
-  const size = 70;
-  const borderWidth = 4;
-
-  const wrapper = document.createElement('div');
-  wrapper.style.cssText = `
-    width: ${size}px;
-    height: ${size}px;
-    border-radius: 50%;
-    border: ${borderWidth}px solid ${color};
-    overflow: hidden;
-    cursor: pointer;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-    background: ${color};
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: transform 0.15s ease;
-  `;
-
-  wrapper.addEventListener('mouseenter', () => {
-    wrapper.style.transform = 'scale(1.1)';
-  });
-  wrapper.addEventListener('mouseleave', () => {
-    wrapper.style.transform = 'scale(1.0)';
-  });
-
-  if (cat.image_url) {
-    const img = document.createElement('img');
-    img.src = cat.image_url;
-    img.alt = cat.name;
-    img.style.cssText = `
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      border-radius: 50%;
-    `;
-    wrapper.appendChild(img);
-  } else {
-    const emoji = document.createElement('span');
-    emoji.textContent = '🐱';
-    emoji.style.cssText = `
-      font-size: 32px;
-      line-height: 1;
-    `;
-    wrapper.appendChild(emoji);
-  }
-
-  const dot = document.createElement('div');
-  dot.style.cssText = `
-    position: absolute;
-    bottom: 2px;
-    right: 2px;
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    background: ${color};
-    border: 2px solid white;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-  `;
-
-  const container = document.createElement('div');
-  container.style.cssText = `position: relative; width: ${size}px; height: ${size}px;`;
-  container.appendChild(wrapper);
-  container.appendChild(dot);
-
-  return container;
-}
-
-export default function Home() {
-  const mapRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<any>(null);
-  const markersRef = useRef<any[]>([]);
-  const [showForm, setShowForm] = useState(false);
-  const [clickedPos, setClickedPos] = useState<{ lat: number; lng: number } | null>(null);
-  const [selectedCat, setSelectedCat] = useState<any>(null);
-  const [user, setUser] = useState<any>(null);
-
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => setUser(data.user));
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-    });
-    return () => listener.subscription.unsubscribe();
-  }, []);
-
-  const clearMarkers = useCallback(() => {
-    markersRef.current.forEach((marker) => {
-      marker.map = null;
-    });
-    markersRef.current = [];
-  }, []);
-
-  const loadCatPins = useCallback(async () => {
-    if (!mapInstanceRef.current) return;
-    clearMarkers();
-    const { data: cats, error } = await supabase.from('cats').select('*');
-    if (error) { console.error(error); return; }
-    const { AdvancedMarkerElement } = await (window as any).google.maps.importLibrary('marker');
-    cats?.forEach((cat) => {
-      const markerElement = createCatMarkerElement(cat);
-      const marker = new AdvancedMarkerElement({
-        position: { lat: cat.lat, lng: cat.lng },
-        map: mapInstanceRef.current,
-        title: cat.name,
-        content: markerElement,
-      });
-      marker.addListener('click', () => setSelectedCat(cat));
-      markersRef.current.push(marker);
-    });
-  }, [clearMarkers]);
-
-  useEffect(() => {
-    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY;
-    const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&callback=initMap&libraries=marker&loading=async`;
-    script.async = true;
-    script.defer = true;
-
-    (window as any).initMap = function () {
-      if (!mapRef.current) return;
-      const map = new (window as any).google.maps.Map(mapRef.current, {
-        center: { lat: 40.7128, lng: -74.0060 },
-        zoom: 13,
-        mapId: process.env.NEXT_PUBLIC_GOOGLE_MAPS_ID,
-      });
-      mapInstanceRef.current = map;
-      map.addListener('click', (e: any) => {
-        if (!user) return alert('Please log in to report a cat!');
-        setClickedPos({ lat: e.latLng.lat(), lng: e.latLng.lng() });
-        setShowForm(true);
-      });
-      loadCatPins();
-    };
-
-    document.head.appendChild(script);
-    return () => {
-      document.head.removeChild(script);
-      delete (window as any).initMap;
-    };
-  }, [loadCatPins, user]);
-
-  async function handleLogout() {
-    await supabase.auth.signOut();
-    setUser(null);
+  async function handleSubmit() {
+    setLoading(true); setError('');
+    if (isSignup) {
+      const { error } = await supabase.auth.signUp({ email, password });
+      if (error) { setError(error.message); setLoading(false); return; }
+      // Auto sign in after signup
+      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+      if (signInError) { setError(signInError.message); setLoading(false); return; }
+    } else {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) { setError(error.message); setLoading(false); return; }
+    }
+    setLoading(false);
+    window.location.href = '/';
   }
 
   return (
-    <main style={{ width: '100vw', height: '100vh', position: 'relative' }}>
-      <div style={{
-        position: 'absolute', top: 0, left: 0, right: 0, zIndex: 100,
-        background: 'white', padding: '12px 24px',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        boxShadow: '0 2px 10px rgba(0,0,0,0.1)'
-      }}>
-        <div style={{ fontSize: 20, fontWeight: 700 }}>🐱 CatMap</div>
-        <div>
-          {user ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <span style={{ fontSize: 14, color: '#555' }}>{user.email}</span>
-              <button onClick={handleLogout} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #ddd', background: 'white', cursor: 'pointer' }}>
-                Log out
-              </button>
-            </div>
-          ) : (
-            <a href="/login" style={{ padding: '8px 20px', borderRadius: 8, background: '#FF6B6B', color: 'white', textDecoration: 'none', fontWeight: 600, fontSize: 14 }}>
-              Log in
-            </a>
-          )}
+    <div style={{ minHeight: '100vh', background: '#f7f7f7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'system-ui, sans-serif' }}>
+      <div style={{ background: 'white', borderRadius: 16, padding: 36, width: 360, boxShadow: '0 4px 24px rgba(0,0,0,0.08)' }}>
+        <div style={{ textAlign: 'center', marginBottom: 28 }}>
+          <div style={{ fontSize: 40, marginBottom: 8 }}>🐱</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: '#222' }}>CatMap</div>
+          <div style={{ fontSize: 14, color: '#aaa', marginTop: 4 }}>{isSignup ? 'Create an account' : 'Sign in to continue'}</div>
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: '#666', marginBottom: 6 }}>Email</div>
+          <input
+            type="email" value={email} onChange={e => setEmail(e.target.value)}
+            placeholder="you@example.com"
+            style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #ddd', fontSize: 14, boxSizing: 'border-box', outline: 'none' }}
+          />
+        </div>
+
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: '#666', marginBottom: 6 }}>Password</div>
+          <input
+            type="password" value={password} onChange={e => setPassword(e.target.value)}
+            placeholder="••••••••"
+            onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+            style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #ddd', fontSize: 14, boxSizing: 'border-box', outline: 'none' }}
+          />
+        </div>
+
+        {error && <div style={{ background: '#fff3f3', border: '1px solid #ffcdd2', borderRadius: 8, padding: '10px 12px', fontSize: 13, color: '#c62828', marginBottom: 14 }}>{error}</div>}
+
+        <button onClick={handleSubmit} disabled={loading || !email || !password}
+          style={{ width: '100%', padding: 12, borderRadius: 8, border: 'none', background: loading ? '#ffccbc' : '#FF6B6B', color: 'white', fontWeight: 700, fontSize: 15, cursor: loading ? 'default' : 'pointer', marginBottom: 14 }}>
+          {loading ? 'Please wait...' : isSignup ? 'Create Account' : 'Sign In'}
+        </button>
+
+        <div style={{ textAlign: 'center', fontSize: 13, color: '#888' }}>
+          {isSignup ? 'Already have an account? ' : "Don't have an account? "}
+          <span onClick={() => { setIsSignup(v => !v); setError(''); }} style={{ color: '#FF6B6B', fontWeight: 600, cursor: 'pointer' }}>
+            {isSignup ? 'Sign in' : 'Sign up'}
+          </span>
         </div>
       </div>
-
-      <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
-
-      {showForm && clickedPos && (
-          lat={clickedPos.lat}
-          lng={clickedPos.lng}
-          onClose={() => setShowForm(false)}
-          onSaved={() => loadCatPins()}
-        />
-      )}
-      {selectedCat && (
-          cat={selectedCat}
-          onClose={() => setSelectedCat(null)}
-          onStatusChange={() => loadCatPins()}
-        />
-      )}
-    </main>
+    </div>
   );
 }
+
+// PAGE: Login / Signup (app/login/page.tsx → route: /login)

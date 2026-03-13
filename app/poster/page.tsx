@@ -1,6 +1,7 @@
+// PAGE: Lost Cat Poster Generator (app/poster/page.tsx → route: /poster)
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(
@@ -8,216 +9,128 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-const statusColors: Record<string, string> = {
-  stray: '#FF9800',
-  community: '#4CAF50',
-  lost: '#F44336',
-  homed: '#2196F3',
-};
-
-function createCatMarkerElement(cat: any): HTMLElement {
-  const color = statusColors[cat.status] || '#888';
-  const size = 70;
-  const borderWidth = 4;
-
-  const wrapper = document.createElement('div');
-  wrapper.style.cssText = `
-    width: ${size}px;
-    height: ${size}px;
-    border-radius: 50%;
-    border: ${borderWidth}px solid ${color};
-    overflow: hidden;
-    cursor: pointer;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-    background: ${color};
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: transform 0.15s ease;
-  `;
-
-  wrapper.addEventListener('mouseenter', () => {
-    wrapper.style.transform = 'scale(1.1)';
-  });
-  wrapper.addEventListener('mouseleave', () => {
-    wrapper.style.transform = 'scale(1.0)';
-  });
-
-  if (cat.image_url) {
-    const img = document.createElement('img');
-    img.src = cat.image_url;
-    img.alt = cat.name;
-    img.style.cssText = `
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      border-radius: 50%;
-    `;
-    wrapper.appendChild(img);
-  } else {
-    // Fallback: emoji on colored background
-    const emoji = document.createElement('span');
-    emoji.textContent = '🐱';
-    emoji.style.cssText = `
-      font-size: 32px;
-      line-height: 1;
-    `;
-    wrapper.appendChild(emoji);
-  }
-
-  // Status dot indicator in bottom-right corner
-  const dot = document.createElement('div');
-  dot.style.cssText = `
-    position: absolute;
-    bottom: 2px;
-    right: 2px;
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    background: ${color};
-    border: 2px solid white;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-  `;
-
-  const container = document.createElement('div');
-  container.style.cssText = `position: relative; width: ${size}px; height: ${size}px;`;
-  container.appendChild(wrapper);
-  container.appendChild(dot);
-
-  return container;
-}
-
-export default function Home() {
-  const mapRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<any>(null);
-  const markersRef = useRef<any[]>([]);
-  const [showForm, setShowForm] = useState(false);
-  const [clickedPos, setClickedPos] = useState<{ lat: number; lng: number } | null>(null);
-  const [selectedCat, setSelectedCat] = useState<any>(null);
-  const [user, setUser] = useState<any>(null);
+export default function PosterPage() {
+  const [cat, setCat] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const printRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => setUser(data.user));
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
+    const params = new URLSearchParams(window.location.search);
+    const catId = params.get('catId');
+    if (!catId) { setError('No cat ID provided.'); setLoading(false); return; }
+    supabase.from('cats').select('*').eq('id', catId).single().then(({ data, error: err }) => {
+      if (err || !data) { setError('Cat not found.'); }
+      else setCat(data);
+      setLoading(false);
     });
-    return () => listener.subscription.unsubscribe();
   }, []);
 
-  const clearMarkers = useCallback(() => {
-    markersRef.current.forEach((marker) => {
-      marker.map = null;
-    });
-    markersRef.current = [];
-  }, []);
-
-  const loadCatPins = useCallback(async () => {
-    if (!mapInstanceRef.current) return;
-
-    clearMarkers();
-
-    const { data: cats, error } = await supabase.from('cats').select('*');
-    if (error) { console.error(error); return; }
-
-    const { AdvancedMarkerElement } = await (window as any).google.maps.importLibrary('marker');
-
-    cats?.forEach((cat) => {
-      const markerElement = createCatMarkerElement(cat);
-
-      const marker = new AdvancedMarkerElement({
-        position: { lat: cat.lat, lng: cat.lng },
-        map: mapInstanceRef.current,
-        title: cat.name,
-        content: markerElement,
-      });
-
-      marker.addListener('click', () => setSelectedCat(cat));
-      markersRef.current.push(marker);
-    });
-  }, [clearMarkers]);
-
-  useEffect(() => {
-    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY;
-    const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&callback=initMap&libraries=marker&loading=async`;
-    script.async = true;
-    script.defer = true;
-
-    (window as any).initMap = function () {
-      if (!mapRef.current) return;
-      const map = new (window as any).google.maps.Map(mapRef.current, {
-        center: { lat: 40.7128, lng: -74.0060 },
-        zoom: 13,
-        mapId: process.env.NEXT_PUBLIC_GOOGLE_MAPS_ID,
-      });
-      mapInstanceRef.current = map;
-      map.addListener('click', (e: any) => {
-        if (!user) return alert('Please log in to report a cat!');
-        setClickedPos({ lat: e.latLng.lat(), lng: e.latLng.lng() });
-        setShowForm(true);
-      });
-      loadCatPins();
-    };
-
-    document.head.appendChild(script);
-    return () => {
-      document.head.removeChild(script);
-      delete (window as any).initMap;
-    };
-  }, [loadCatPins, user]);
-
-  async function handleLogout() {
-    await supabase.auth.signOut();
-    setUser(null);
+  function handlePrint() {
+    window.print();
   }
+
+  if (loading) return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'system-ui, sans-serif' }}>
+      <div style={{ fontSize: 48 }}>🐱</div>
+    </div>
+  );
+
+  if (error || !cat) return (
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontFamily: 'system-ui, sans-serif', gap: 12 }}>
+      <div style={{ fontSize: 48 }}>🐾</div>
+      <div style={{ fontSize: 16, color: '#888' }}>{error || 'Something went wrong.'}</div>
+      <a href="/" style={{ color: '#FF6B6B', textDecoration: 'none', fontWeight: 600 }}>← Back to map</a>
+    </div>
+  );
+
+  const a = cat.attributes || {};
+  const date = new Date(cat.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  const url = `${typeof window !== 'undefined' ? window.location.origin : ''}/cat/${cat.id}`;
 
   return (
-    <main style={{ width: '100vw', height: '100vh', position: 'relative' }}>
+    <div style={{ fontFamily: 'system-ui, sans-serif', background: '#f5f5f5', minHeight: '100vh' }}>
 
-      {/* Navbar */}
-      <div style={{
-        position: 'absolute', top: 0, left: 0, right: 0, zIndex: 100,
-        background: 'white', padding: '12px 24px',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        boxShadow: '0 2px 10px rgba(0,0,0,0.1)'
-      }}>
-        <div style={{ fontSize: 20, fontWeight: 700 }}>🐱 CatMap</div>
-        <div>
-          {user ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <span style={{ fontSize: 14, color: '#555' }}>{user.email}</span>
-              <button
-                onClick={handleLogout}
-                style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #ddd', background: 'white', cursor: 'pointer' }}
-              >
-                Log out
-              </button>
-            </div>
-          ) : (
-            <a href="/login" style={{
-              padding: '8px 20px', borderRadius: 8, background: '#FF6B6B',
-              color: 'white', textDecoration: 'none', fontWeight: 600, fontSize: 14
-            }}>
-              Log in
-            </a>
-          )}
+      {/* Screen controls — hidden on print */}
+      <div className="no-print" style={{ background: 'white', padding: '12px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 1px 4px rgba(0,0,0,0.08)' }}>
+        <a href="/" style={{ fontSize: 18, fontWeight: 700, textDecoration: 'none', color: '#222' }}>🐱 CatMap</a>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <a href={`/cat/${cat.id}`} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #ddd', fontSize: 13, fontWeight: 600, color: '#444', textDecoration: 'none' }}>← Cat Profile</a>
+          <button onClick={handlePrint} style={{ padding: '8px 20px', borderRadius: 8, border: 'none', background: '#FF6B6B', color: 'white', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>
+            🖨️ Print / Save PDF
+          </button>
         </div>
       </div>
 
-      <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
+      {/* A4 Poster */}
+      <div ref={printRef} style={{ width: 794, margin: '32px auto', background: 'white', boxShadow: '0 4px 24px rgba(0,0,0,0.12)', padding: '48px 56px', boxSizing: 'border-box', minHeight: 1123 }}>
 
-      {showForm && clickedPos && (
-          lat={clickedPos.lat}
-          lng={clickedPos.lng}
-          onClose={() => setShowForm(false)}
-          onSaved={() => loadCatPins()}
-        />
-      )}
-      {selectedCat && (
-          cat={selectedCat}
-          onClose={() => setSelectedCat(null)}
-        />
-      )}
-    </main>
+        {/* Header */}
+        <div style={{ textAlign: 'center', marginBottom: 32 }}>
+          <div style={{ display: 'inline-block', background: '#F44336', color: 'white', padding: '8px 32px', borderRadius: 4, fontSize: 28, fontWeight: 900, letterSpacing: 4, marginBottom: 16 }}>
+            🚨 LOST CAT
+          </div>
+          <h1 style={{ margin: 0, fontSize: 48, fontWeight: 900, color: '#111', letterSpacing: -1 }}>{cat.name}</h1>
+          <p style={{ margin: '8px 0 0', fontSize: 16, color: '#888' }}>Missing since {date} · Please help bring them home</p>
+        </div>
+
+        {/* Photo */}
+        {cat.image_url && (
+          <div style={{ textAlign: 'center', marginBottom: 32 }}>
+            <img src={cat.image_url} alt={cat.name}
+              style={{ maxWidth: '100%', maxHeight: 380, objectFit: 'contain', borderRadius: 12, border: '3px solid #F44336', display: 'inline-block' }} />
+          </div>
+        )}
+
+        {/* Attributes grid */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 28 }}>
+          {[
+            a.gender && ['Gender', a.gender],
+            a.age && ['Age', a.age],
+            a.coat && ['Coat', a.coat],
+            a.eyes && ['Eyes', a.eyes],
+            a.tnr && a.tnr !== 'None' && ['Ear Clip (TNR)', a.tnr],
+            a.health_status && a.health_status !== 'Unknown' && ['Health', a.health_status],
+          ].filter(Boolean).map(([label, value]: any) => (
+            <div key={label} style={{ background: '#f9f9f9', borderRadius: 8, padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 13, color: '#888', fontWeight: 600 }}>{label}</span>
+              <span style={{ fontSize: 14, fontWeight: 700, color: '#222' }}>{value}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Notes */}
+        {a.notes && (
+          <div style={{ background: '#fff8e1', border: '1px solid #ffe082', borderRadius: 8, padding: '12px 16px', marginBottom: 28, fontSize: 14, color: '#555', lineHeight: 1.6 }}>
+            <strong>Notes:</strong> {a.notes}
+          </div>
+        )}
+
+        {/* Call to action */}
+        <div style={{ background: '#F44336', color: 'white', borderRadius: 10, padding: '20px 24px', marginBottom: 24, textAlign: 'center' }}>
+          <div style={{ fontSize: 20, fontWeight: 800, marginBottom: 8 }}>If you see this cat, please log a sighting!</div>
+          <div style={{ fontSize: 14, opacity: 0.9, marginBottom: 12 }}>Scan the QR code or visit the link below</div>
+          <div style={{ background: 'white', color: '#F44336', borderRadius: 8, padding: '8px 20px', display: 'inline-block', fontWeight: 700, fontSize: 15, wordBreak: 'break-all' }}>
+            {url}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div style={{ borderTop: '1px solid #f0f0f0', paddingTop: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ fontSize: 13, color: '#aaa' }}>🐱 CatMap — Community Cat Tracking</div>
+          <div style={{ fontSize: 12, color: '#ccc' }}>catmap.app</div>
+        </div>
+      </div>
+
+      <style>{`
+        @media print {
+          .no-print { display: none !important; }
+          body { background: white !important; }
+          div[style*="margin: 32px auto"] { margin: 0 !important; box-shadow: none !important; }
+        }
+      `}</style>
+    </div>
   );
 }
+
+// PAGE: Lost Cat Poster Generator (app/poster/page.tsx → route: /poster)
