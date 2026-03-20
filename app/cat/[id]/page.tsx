@@ -1,31 +1,15 @@
+
 // PAGE: Cat Profile (app/cat/[id]/page.tsx → route: /cat/[id])
 // @ts-nocheck
 'use client';
 export const dynamic = 'force-dynamic';
 import { supabase } from '../../../lib/supabase';
 
-export const dynamic = 'force-dynamic';
 
 import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'next/navigation';
 
 
-const supabase = new Proxy({} as ReturnType<typeof createClient>, {
-  get(_target, prop) {
-    const client = getSupabase() as any;
-    const val = client[prop];
-    if (typeof val === 'function') return val.bind(client);
-    if (typeof val === 'object' && val !== null) {
-      return new Proxy(val, {
-        get(_t2, prop2) {
-          const val2 = val[prop2];
-          return typeof val2 === 'function' ? val2.bind(val) : val2;
-        }
-      });
-    }
-    return val;
-  }
-});
 
 const statusColors: Record<string, string> = {
   stray: '#FF9800', community: '#4CAF50', lost: '#F44336', homed: '#2196F3',

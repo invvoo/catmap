@@ -4,7 +4,6 @@
 export const dynamic = 'force-dynamic';
 import { supabase } from '../../lib/supabase';
 
-export const dynamic = 'force-dynamic';
 
 import { useState } from 'react';
 

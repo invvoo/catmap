@@ -1,33 +1,13 @@
-// PAGE: User Profile (app/profile/[id]/page.tsx → route: /profile/[id])
 // @ts-nocheck
+// PAGE: User Profile (app/profile/[id]/page.tsx → route: /profile/[id])
 'use client';
-export const dynamic = 'force-dynamic';
-import { supabase } from '../../../lib/supabase';
-
 export const dynamic = 'force-dynamic';
 
 import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'next/navigation';
+import { supabase } from '../../../lib/supabase';
 
-
-const supabase = new Proxy({} as ReturnType<typeof createClient>, {
-  get(_target, prop) {
-    const client = getSupabase() as any;
-    const val = client[prop];
-    if (typeof val === 'function') return val.bind(client);
-    if (typeof val === 'object' && val !== null) {
-      return new Proxy(val, {
-        get(_t2, prop2) {
-          const val2 = val[prop2];
-          return typeof val2 === 'function' ? val2.bind(val) : val2;
-        }
-      });
-    }
-    return val;
-  }
-});
-
-const ROLES: Record<string, { label: string; emoji: string; color: string }> = {
+const ROLES = {
   community:  { label: 'Community Member', emoji: '🏘️', color: '#4CAF50' },
   volunteer:  { label: 'Volunteer',         emoji: '🙋', color: '#2196F3' },
   vet:        { label: 'Vet / Medical',     emoji: '🩺', color: '#9C27B0' },
@@ -41,13 +21,12 @@ const TRUST_LEVELS = [
   { min: 30, max: Infinity, label: 'Guardian', color: '#FF6B6B' },
 ];
 
-function getTrustLevel(score: number) {
+function getTrustLevel(score) {
   return TRUST_LEVELS.find(l => score >= l.min && score <= l.max) ?? TRUST_LEVELS[0];
 }
 
-function timeAgo(dateStr: string) {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const days = Math.floor(diff / 86400000);
+function timeAgo(dateStr) {
+  const days = Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);
   if (days === 0) return 'today';
   if (days === 1) return 'yesterday';
   if (days < 30) return `${days}d ago`;
@@ -55,81 +34,43 @@ function timeAgo(dateStr: string) {
   return months === 1 ? '1 month ago' : `${months} months ago`;
 }
 
-const statusColors: Record<string, string> = {
-  stray: '#FF9800', community: '#4CAF50', lost: '#F44336', homed: '#2196F3',
-};
-const statusEmoji: Record<string, string> = {
-  stray: '🏚️', community: '🏘️', lost: '🚨', homed: '🏠',
-};
+const statusColors = { stray: '#FF9800', community: '#4CAF50', lost: '#F44336', homed: '#2196F3' };
+const statusEmoji = { stray: '🏚️', community: '🏘️', lost: '🚨', homed: '🏠' };
 
 export default function ProfilePage() {
   const params = useParams();
-  const profileId = params?.id as string;
+  const profileId = params?.id;
 
-  const [profile, setProfile] = useState<any>(null);
-  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [profile, setProfile] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null);
   const [isOwn, setIsOwn] = useState(false);
   const [loading, setLoading] = useState(true);
-
-  // Stats
-  const [cats, setCats] = useState<any[]>([]);
+  const [cats, setCats] = useState([]);
   const [sightingCount, setSightingCount] = useState(0);
   const [postCount, setPostCount] = useState(0);
-
-  // Edit mode
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState('');
   const [editBio, setEditBio] = useState('');
   const [editRole, setEditRole] = useState('community');
   const [saving, setSaving] = useState(false);
-
-  // Avatar upload
-  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const avatarInputRef = useRef(null);
   const [avatarUploading, setAvatarUploading] = useState(false);
 
-  // ── NAVBAR STATE ──
-  const [navUser, setNavUser] = useState<any>(null);
-  const [navProfile, setNavProfile] = useState<any>(null);
+  // Navbar state
+  const [navProfile, setNavProfile] = useState(null);
   const [navUnread, setNavUnread] = useState(0);
+  const [navNotifUnread, setNavNotifUnread] = useState(0);
   const [showNavMenu, setShowNavMenu] = useState(false);
-  const [navGpsLoading, setNavGpsLoading] = useState(false);
-
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setNavUser(data.user);
-      if (data.user) {
-        supabase.from('profiles').select('display_name,avatar_url').eq('id', data.user.id).maybeSingle()
-          .then(({ data: p }) => setNavProfile(p));
-        supabase.from('messages').select('id', { count: 'exact' }).eq('to_id', data.user.id).eq('read', false)
-          .then(({ count }) => setNavUnread(count || 0));
-      }
-    });
-    const { data: listener } = supabase.auth.onAuthStateChange((_e, session) => {
-      setNavUser(session?.user ?? null);
-      if (!session?.user) { setNavProfile(null); setNavUnread(0); }
-    });
-    return () => listener.subscription.unsubscribe();
-  }, []);
-
-  function handleNavMetACat() {
-    if (!navUser) { window.location.href = '/login'; return; }
-    setNavGpsLoading(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => { setNavGpsLoading(false); window.location.href = '/'; },
-      () => { setNavGpsLoading(false); window.location.href = '/'; },
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
-  }
-
-  async function handleNavLogout() {
-    await supabase.auth.signOut();
-    window.location.href = '/';
-  }
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       setCurrentUser(data.user);
       if (data.user?.id === profileId) setIsOwn(true);
+      if (data.user) {
+        supabase.from('profiles').select('display_name,avatar_url').eq('id', data.user.id).maybeSingle().then(({ data: p }) => setNavProfile(p));
+        supabase.from('messages').select('id', { count: 'exact' }).eq('to_id', data.user.id).eq('read', false).then(({ count }) => setNavUnread(count || 0));
+        supabase.from('notifications').select('id', { count: 'exact' }).eq('user_id', data.user.id).eq('read', false).then(({ count }) => setNavNotifUnread(count || 0));
+      }
     });
     loadProfile();
     loadStats();
@@ -138,15 +79,7 @@ export default function ProfilePage() {
   async function loadProfile() {
     setLoading(true);
     const { data } = await supabase.from('profiles').select('*').eq('id', profileId).maybeSingle();
-    if (data) {
-      setProfile(data);
-      setEditName(data.display_name || '');
-      setEditBio(data.bio || '');
-      setEditRole(data.role || 'community');
-    } else {
-      // Profile row doesn't exist yet — show empty state
-      setProfile(null);
-    }
+    if (data) { setProfile(data); setEditName(data.display_name || ''); setEditBio(data.bio || ''); setEditRole(data.role || 'community'); }
     setLoading(false);
   }
 
@@ -163,95 +96,68 @@ export default function ProfilePage() {
 
   async function handleSaveProfile() {
     setSaving(true);
-    const updates = {
-      id: profileId,
-      display_name: editName.trim() || null,
-      bio: editBio.trim() || null,
-      role: editRole,
-      trust_score: profile?.trust_score ?? 0,
-    };
+    const updates = { id: profileId, display_name: editName.trim() || null, bio: editBio.trim() || null, role: editRole, trust_score: profile?.trust_score ?? 0 };
     const { data, error } = await supabase.from('profiles').upsert(updates).select().single();
     setSaving(false);
     if (!error && data) { setProfile(data); setEditing(false); }
   }
 
-  async function handleAvatarUpload(file: File) {
+  async function handleAvatarUpload(file) {
     setAvatarUploading(true);
     const filename = `avatars/${profileId}_${Date.now()}.${file.name.split('.').pop()}`;
     const { error: upErr } = await supabase.storage.from('cat-photos').upload(filename, file, { upsert: true });
     if (!upErr) {
       const { data } = supabase.storage.from('cat-photos').getPublicUrl(filename);
       await supabase.from('profiles').upsert({ id: profileId, avatar_url: data.publicUrl });
-      setProfile((p: any) => ({ ...p, avatar_url: data.publicUrl }));
+      setProfile(p => ({ ...p, avatar_url: data.publicUrl }));
     }
     setAvatarUploading(false);
   }
 
-  if (loading) return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: '#aaa', fontSize: 16 }}>
-      Loading profile...
-    </div>
-  );
+  async function handleNavLogout() { await supabase.auth.signOut(); window.location.href = '/'; }
+
+  if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: '#aaa' }}>Loading profile...</div>;
 
   const trustScore = profile?.trust_score ?? 0;
   const trustLevel = getTrustLevel(trustScore);
   const nextLevel = TRUST_LEVELS.find(l => l.min > trustScore);
-  const progressPct = nextLevel
-    ? Math.min(100, ((trustScore - trustLevel.min) / (nextLevel.min - trustLevel.min)) * 100)
-    : 100;
+  const progressPct = nextLevel ? Math.min(100, ((trustScore - trustLevel.min) / (nextLevel.min - trustLevel.min)) * 100) : 100;
   const role = ROLES[profile?.role || 'community'] ?? ROLES.community;
   const displayName = profile?.display_name || 'Anonymous';
 
   return (
     <div style={{ minHeight: '100vh', background: '#f7f7f7', fontFamily: 'system-ui, sans-serif' }}>
 
-      {/* ── NAVBAR ── */}
-      <div style={{ flexShrink: 0, background: 'white', padding: '10px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 2px 10px rgba(0,0,0,0.08)', zIndex: 100, position: 'sticky', top: 0 }}>
+      {/* Navbar */}
+      <div style={{ background: 'white', padding: '10px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 2px 10px rgba(0,0,0,0.08)', position: 'sticky', top: 0, zIndex: 100 }}>
         <a href="/" style={{ fontSize: 20, fontWeight: 700, textDecoration: 'none', color: '#222' }}>🐱 CatMap</a>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <a href="/about" style={{ fontSize: 13, fontWeight: 600, color: '#444', textDecoration: 'none', padding: '6px 12px', borderRadius: 8 }}
-            onMouseEnter={e => (e.currentTarget.style.background = '#f5f5f5')}
-            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>About</a>
-          <a href="/care" style={{ fontSize: 13, fontWeight: 600, color: '#444', textDecoration: 'none', padding: '6px 12px', borderRadius: 8 }}
-            onMouseEnter={e => (e.currentTarget.style.background = '#f5f5f5')}
-            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>🐾 Care for Strays</a>
+          <a href="/about" style={{ fontSize: 13, fontWeight: 600, color: '#444', textDecoration: 'none', padding: '6px 12px', borderRadius: 8 }}>About</a>
+          <a href="/care" style={{ fontSize: 13, fontWeight: 600, color: '#444', textDecoration: 'none', padding: '6px 12px', borderRadius: 8 }}>🐾 Care for Strays</a>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <button onClick={handleNavMetACat} disabled={navGpsLoading}
-            style={{ padding: '9px 18px', borderRadius: 8, border: 'none', background: navGpsLoading ? '#ffccbc' : '#FF6B6B', color: 'white', fontWeight: 700, fontSize: 14, cursor: navGpsLoading ? 'default' : 'pointer' }}>
-            {navGpsLoading ? '📍 Getting location...' : '🐱 I met a cat!'}
-          </button>
-          {navUser ? (
+          <a href="/" style={{ padding: '9px 18px', borderRadius: 8, border: 'none', background: '#FF6B6B', color: 'white', fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>🐱 I met a cat!</a>
+          {currentUser ? (
             <div style={{ position: 'relative' }}>
-              <div onClick={() => setShowNavMenu(v => !v)}
-                style={{ width: 36, height: 36, borderRadius: '50%', background: '#FF6B6B', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 15, cursor: 'pointer', border: '2px solid #ffccbc', overflow: 'hidden', flexShrink: 0 }}>
-                {navProfile?.avatar_url
-                  ? <img src={navProfile.avatar_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  : <span>{navUser.email?.[0]?.toUpperCase() ?? '?'}</span>}
+              <div onClick={() => setShowNavMenu(v => !v)} style={{ width: 36, height: 36, borderRadius: '50%', background: '#FF6B6B', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 15, cursor: 'pointer', border: '2px solid #ffccbc', overflow: 'hidden' }}>
+                {navProfile?.avatar_url ? <img src={navProfile.avatar_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span>{currentUser.email?.[0]?.toUpperCase() ?? '?'}</span>}
               </div>
               {showNavMenu && (
                 <>
                   <div onClick={() => setShowNavMenu(false)} style={{ position: 'fixed', inset: 0, zIndex: 200 }} />
                   <div style={{ position: 'absolute', top: 44, right: 0, background: 'white', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', border: '1px solid #f0f0f0', minWidth: 190, zIndex: 201, overflow: 'hidden' }}>
                     <div style={{ padding: '12px 16px', borderBottom: '1px solid #f5f5f5' }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: '#222', marginBottom: 1 }}>{navProfile?.display_name || 'Anonymous'}</div>
-                      <div style={{ fontSize: 11, color: '#aaa', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{navUser.email}</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#222' }}>{navProfile?.display_name || 'Anonymous'}</div>
+                      <div style={{ fontSize: 11, color: '#aaa' }}>{currentUser.email}</div>
                     </div>
-                    <a href={`/profile/${navUser.id}`} onClick={() => setShowNavMenu(false)}
-                      style={{ display: 'block', padding: '11px 16px', fontSize: 13, fontWeight: 600, color: '#333', textDecoration: 'none', borderBottom: '1px solid #f5f5f5' }}
-                      onMouseEnter={e => (e.currentTarget.style.background = '#f9f9f9')}
-                      onMouseLeave={e => (e.currentTarget.style.background = 'white')}>👤 View Profile</a>
-                    <a href="/messages" onClick={() => setShowNavMenu(false)}
-                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 16px', fontSize: 13, fontWeight: 600, color: '#333', textDecoration: 'none', borderBottom: '1px solid #f5f5f5' }}
-                      onMouseEnter={e => (e.currentTarget.style.background = '#f9f9f9')}
-                      onMouseLeave={e => (e.currentTarget.style.background = 'white')}>
-                      <span>✉️ Messages</span>
-                      {navUnread > 0 && <span style={{ background: '#FF6B6B', color: 'white', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 800 }}>{navUnread > 9 ? '9+' : navUnread}</span>}
+                    <a href={`/profile/${currentUser.id}`} style={{ display: 'block', padding: '11px 16px', fontSize: 13, fontWeight: 600, color: '#333', textDecoration: 'none', borderBottom: '1px solid #f5f5f5' }}>👤 View Profile</a>
+                    <a href="/messages" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 16px', fontSize: 13, fontWeight: 600, color: '#333', textDecoration: 'none', borderBottom: '1px solid #f5f5f5' }}>
+                      <span>✉️ Messages</span>{navUnread > 0 && <span style={{ background: '#FF6B6B', color: 'white', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 800 }}>{navUnread}</span>}
                     </a>
-                    <button onClick={handleNavLogout}
-                      style={{ width: '100%', padding: '11px 16px', border: 'none', background: 'white', textAlign: 'left', fontSize: 13, color: '#F44336', fontWeight: 600, cursor: 'pointer' }}
-                      onMouseEnter={e => (e.currentTarget.style.background = '#fff5f5')}
-                      onMouseLeave={e => (e.currentTarget.style.background = 'white')}>Sign out</button>
+                    <a href="/notifications" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 16px', fontSize: 13, fontWeight: 600, color: '#333', textDecoration: 'none', borderBottom: '1px solid #f5f5f5' }}>
+                      <span>🔔 Notifications</span>{navNotifUnread > 0 && <span style={{ background: '#FF6B6B', color: 'white', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 800 }}>{navNotifUnread}</span>}
+                    </a>
+                    <button onClick={handleNavLogout} style={{ width: '100%', padding: '11px 16px', border: 'none', background: 'white', textAlign: 'left', fontSize: 13, color: '#F44336', fontWeight: 600, cursor: 'pointer' }}>Sign out</button>
                   </div>
                 </>
               )}
@@ -264,49 +170,26 @@ export default function ProfilePage() {
 
       <div style={{ maxWidth: 680, margin: '0 auto', padding: '24px 16px' }}>
 
-        {/* ── PROFILE CARD ── */}
+        {/* Profile card */}
         <div style={{ background: 'white', borderRadius: 16, overflow: 'hidden', boxShadow: '0 2px 12px rgba(0,0,0,0.07)', marginBottom: 16 }}>
-
-          {/* Header banner */}
-          <div style={{ height: 80, background: `linear-gradient(135deg, #FF6B6B 0%, #ff9a8b 100%)` }} />
-
+          <div style={{ height: 80, background: 'linear-gradient(135deg, #FF6B6B 0%, #ff9a8b 100%)' }} />
           <div style={{ padding: '0 24px 24px' }}>
-            {/* Avatar */}
             <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: -36 }}>
               <div style={{ position: 'relative' }}>
-                <div
-                  onClick={() => isOwn && avatarInputRef.current?.click()}
-                  style={{ width: 72, height: 72, borderRadius: '50%', border: '4px solid white', background: '#FF6B6B', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', cursor: isOwn ? 'pointer' : 'default', boxShadow: '0 2px 8px rgba(0,0,0,0.12)', flexShrink: 0 }}>
-                  {profile?.avatar_url
-                    ? <img src={profile.avatar_url} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    : <span style={{ fontSize: 28, color: 'white', fontWeight: 700 }}>{displayName[0]?.toUpperCase() ?? '?'}</span>
-                  }
-                  {avatarUploading && (
-                    <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', fontSize: 18 }}>⏳</div>
-                  )}
+                <div onClick={() => isOwn && avatarInputRef.current?.click()}
+                  style={{ width: 72, height: 72, borderRadius: '50%', border: '4px solid white', background: '#FF6B6B', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', cursor: isOwn ? 'pointer' : 'default', boxShadow: '0 2px 8px rgba(0,0,0,0.12)' }}>
+                  {profile?.avatar_url ? <img src={profile.avatar_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ fontSize: 28, color: 'white', fontWeight: 700 }}>{displayName[0]?.toUpperCase() ?? '?'}</span>}
+                  {avatarUploading && <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%' }}>⏳</div>}
                 </div>
-                {isOwn && (
-                  <div onClick={() => avatarInputRef.current?.click()}
-                    style={{ position: 'absolute', bottom: 2, right: 2, width: 20, height: 20, background: '#333', borderRadius: '50%', border: '2px solid white', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 10 }}>
-                    ✏️
-                  </div>
-                )}
-                <input ref={avatarInputRef} type="file" accept="image/*" style={{ display: 'none' }}
-                  onChange={e => { const f = e.target.files?.[0]; if (f) handleAvatarUpload(f); }} />
+                <input ref={avatarInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) handleAvatarUpload(f); }} />
               </div>
-
               <div style={{ display: 'flex', gap: 8 }}>
                 {isOwn && !editing && (
-                  <button onClick={() => setEditing(true)}
-                    style={{ padding: '7px 16px', borderRadius: 8, border: '1px solid #ddd', background: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#444' }}>
-                    ✏️ Edit Profile
-                  </button>
+                  <button onClick={() => setEditing(true)} style={{ padding: '7px 16px', borderRadius: 8, border: '1px solid #ddd', background: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#444' }}>✏️ Edit Profile</button>
                 )}
-
               </div>
             </div>
 
-            {/* Name + role */}
             {editing ? (
               <div style={{ marginTop: 14 }}>
                 <input value={editName} onChange={e => setEditName(e.target.value)} placeholder="Display name"
@@ -326,8 +209,7 @@ export default function ProfilePage() {
                 </div>
                 <div style={{ display: 'flex', gap: 10 }}>
                   <button onClick={() => setEditing(false)} style={{ flex: 1, padding: 10, borderRadius: 8, border: '1px solid #ddd', background: 'white', cursor: 'pointer', fontSize: 13 }}>Cancel</button>
-                  <button onClick={handleSaveProfile} disabled={saving}
-                    style={{ flex: 2, padding: 10, borderRadius: 8, border: 'none', background: '#FF6B6B', color: 'white', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+                  <button onClick={handleSaveProfile} disabled={saving} style={{ flex: 2, padding: 10, borderRadius: 8, border: 'none', background: '#FF6B6B', color: 'white', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
                     {saving ? 'Saving...' : 'Save Profile'}
                   </button>
                 </div>
@@ -336,59 +218,39 @@ export default function ProfilePage() {
               <div style={{ marginTop: 12 }}>
                 <div style={{ fontSize: 20, fontWeight: 700, color: '#111', marginBottom: 4 }}>{displayName}</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: role.color, color: 'white' }}>
-                    {role.emoji} {role.label}
-                  </span>
-                  <span style={{ fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: trustLevel.color, color: 'white' }}>
-                    ⭐ {trustLevel.label}
-                  </span>
+                  <span style={{ fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: role.color, color: 'white' }}>{role.emoji} {role.label}</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: trustLevel.color, color: 'white' }}>⭐ {trustLevel.label}</span>
                 </div>
                 {profile?.bio && <p style={{ fontSize: 14, color: '#555', lineHeight: 1.5, margin: 0 }}>{profile.bio}</p>}
-                {!profile && isOwn && (
-                  <p style={{ fontSize: 13, color: '#aaa', fontStyle: 'italic' }}>Set up your profile so the community knows who you are.</p>
-                )}
+                {!profile && isOwn && <p style={{ fontSize: 13, color: '#aaa', fontStyle: 'italic' }}>Set up your profile so the community knows who you are.</p>}
               </div>
             )}
           </div>
         </div>
 
-        {/* ── TRUST SCORE ── */}
+        {/* Trust score */}
         <div style={{ background: 'white', borderRadius: 16, padding: '20px 24px', boxShadow: '0 2px 12px rgba(0,0,0,0.07)', marginBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
             <div style={{ fontSize: 14, fontWeight: 700, color: '#333' }}>⭐ Trust Score</div>
             <div style={{ fontSize: 22, fontWeight: 800, color: trustLevel.color }}>{trustScore}</div>
           </div>
-          {/* Progress bar */}
           <div style={{ height: 8, background: '#f0f0f0', borderRadius: 8, overflow: 'hidden', marginBottom: 8 }}>
             <div style={{ height: '100%', width: `${progressPct}%`, background: trustLevel.color, borderRadius: 8, transition: 'width 0.6s ease' }} />
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#bbb' }}>
             <span>{trustLevel.label}</span>
-            {nextLevel && <span>{nextLevel.min - trustScore} pts to {nextLevel.label}</span>}
-            {!nextLevel && <span>Max level reached 🎉</span>}
+            {nextLevel ? <span>{nextLevel.min - trustScore} pts to {nextLevel.label}</span> : <span>Max level reached 🎉</span>}
           </div>
-          {/* How trust is earned */}
           <div style={{ marginTop: 14, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {[
-              { label: 'Cat reported', pts: '+2' },
-              { label: 'Sighting logged', pts: '+1' },
-              { label: 'Owner verified', pts: '+5' },
-              { label: 'Forum post', pts: '+3' },
-            ].map(item => (
-              <div key={item.label} style={{ fontSize: 11, color: '#888', background: '#f9f9f9', padding: '4px 10px', borderRadius: 20, border: '1px solid #f0f0f0' }}>
-                {item.pts} {item.label}
-              </div>
+            {[['Cat reported', '+2'], ['Sighting logged', '+1'], ['Owner verified', '+5'], ['Forum post', '+3']].map(([label, pts]) => (
+              <div key={label} style={{ fontSize: 11, color: '#888', background: '#f9f9f9', padding: '4px 10px', borderRadius: 20, border: '1px solid #f0f0f0' }}>{pts} {label}</div>
             ))}
           </div>
         </div>
 
-        {/* ── STATS ── */}
+        {/* Stats */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 16 }}>
-          {[
-            { label: 'Cats Reported', value: cats.length, emoji: '🐱' },
-            { label: 'Sightings Logged', value: sightingCount, emoji: '📍' },
-            { label: 'Forum Posts', value: postCount, emoji: '💬' },
-          ].map(s => (
+          {[{ label: 'Cats Reported', value: cats.length, emoji: '🐱' }, { label: 'Sightings Logged', value: sightingCount, emoji: '📍' }, { label: 'Forum Posts', value: postCount, emoji: '💬' }].map(s => (
             <div key={s.label} style={{ background: 'white', borderRadius: 12, padding: '16px 12px', textAlign: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
               <div style={{ fontSize: 24, marginBottom: 4 }}>{s.emoji}</div>
               <div style={{ fontSize: 22, fontWeight: 800, color: '#111' }}>{s.value}</div>
@@ -397,24 +259,21 @@ export default function ProfilePage() {
           ))}
         </div>
 
-        {/* ── THEIR CATS ── */}
+        {/* Their cats */}
         {cats.length > 0 && (
           <div style={{ background: 'white', borderRadius: 16, padding: '20px 24px', boxShadow: '0 2px 12px rgba(0,0,0,0.07)' }}>
             <div style={{ fontSize: 14, fontWeight: 700, color: '#333', marginBottom: 14 }}>🐱 {isOwn ? 'Your' : `${displayName}'s`} Cats</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {cats.map((cat: any) => (
-                <a key={cat.id} href={`/cat/${cat.id}`} style={{ display: 'flex', alignItems: 'center', gap: 12, textDecoration: 'none', padding: '8px', borderRadius: 10, border: '1px solid #f5f5f5', background: '#fafafa' }}
-                  onMouseEnter={e => (e.currentTarget.style.background = '#f0f0f0')}
-                  onMouseLeave={e => (e.currentTarget.style.background = '#fafafa')}>
+              {cats.map(cat => (
+                <a key={cat.id} href={`/cat/${cat.id}`}
+                  style={{ display: 'flex', alignItems: 'center', gap: 12, textDecoration: 'none', padding: '8px', borderRadius: 10, border: '1px solid #f5f5f5', background: '#fafafa' }}>
                   {cat.image_url
                     ? <img src={cat.image_url} alt={cat.name} style={{ width: 48, height: 48, borderRadius: 8, objectFit: 'cover', objectPosition: '50% 20%', flexShrink: 0 }} />
                     : <div style={{ width: 48, height: 48, borderRadius: 8, background: statusColors[cat.status] || '#eee', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>🐱</div>
                   }
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontWeight: 700, fontSize: 14, color: '#111', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cat.name}</div>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 8, background: statusColors[cat.status] || '#eee', color: 'white' }}>
-                      {statusEmoji[cat.status]} {cat.status}
-                    </span>
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 8, background: statusColors[cat.status] || '#eee', color: 'white' }}>{statusEmoji[cat.status]} {cat.status}</span>
                   </div>
                   <div style={{ fontSize: 11, color: '#bbb', flexShrink: 0 }}>{timeAgo(cat.created_at)}</div>
                 </a>
@@ -423,11 +282,7 @@ export default function ProfilePage() {
           </div>
         )}
 
-        {cats.length === 0 && (
-          <div style={{ textAlign: 'center', color: '#ccc', fontSize: 14, padding: '32px 0' }}>
-            No cats reported yet 🐾
-          </div>
-        )}
+        {cats.length === 0 && <div style={{ textAlign: 'center', color: '#ccc', fontSize: 14, padding: '32px 0' }}>No cats reported yet 🐾</div>}
       </div>
     </div>
   );
