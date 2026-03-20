@@ -206,7 +206,7 @@ export default function Home() {
     const markers = jittered.map(cat => {
       const marker = new AdvancedMarkerElement({ position: { lat: cat.lat, lng: cat.lng }, title: cat.name, content: createCatMarkerElement(cat) });
       marker._catId = cat.id;
-      marker.addListener('click', () => openPopup(catById[cat.id] || cat));
+      marker.addListener('gmp-click', () => openPopup(catById[cat.id] || cat));
       return marker;
     });
     markersRef.current = markers;
