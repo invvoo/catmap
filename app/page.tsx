@@ -178,7 +178,7 @@ export default function Home() {
     const { data: cats, error } = await supabase.from('cats').select('*');
     if (error) { console.error(error); return; }
     setAllCats(cats || []);
-    catsDataRef.current = cats || [];
+    catsDataRef.current = (cats || []).filter(c => typeof c.lat === 'number' && typeof c.lng === 'number' && !isNaN(c.lat) && !isNaN(c.lng));
     const bounds = mapInstanceRef.current?.getBounds();
     if (bounds) setVisibleCount((cats || []).filter(c => bounds.contains({ lat: c.lat, lng: c.lng })).length);
     await renderClusters(cats || []);
