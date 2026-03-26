@@ -96,6 +96,7 @@ export default function Home() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [notifUnread, setNotifUnread] = useState(0);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showHomeMenu, setShowHomeMenu] = useState(false);
   const [gpsLoading, setGpsLoading] = useState(false);
   const [gpsError, setGpsError] = useState('');
   const [allCats, setAllCats] = useState([]);
@@ -304,7 +305,24 @@ export default function Home() {
 
       {/* ── NAVBAR ── */}
       <div className="catmap-navbar" style={{ flexShrink: 0, background: 'white', padding: '10px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 2px 10px rgba(0,0,0,0.08)', zIndex: 100 }}>
-        <a href="/" style={{ fontSize: 20, fontWeight: 700, textDecoration: 'none', color: '#222' }}>🐱 CatMap</a>
+        <div style={{ position: 'relative' }}>
+          <div onClick={() => setShowHomeMenu(v => !v)} style={{ fontSize: 20, fontWeight: 700, color: '#222', cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', gap: 4 }}>
+            🐱 CatMap <span style={{ fontSize: 10, color: '#aaa', marginTop: 2 }}>▾</span>
+          </div>
+          {showHomeMenu && (
+            <>
+              <div onClick={() => setShowHomeMenu(false)} style={{ position: 'fixed', inset: 0, zIndex: 200 }} />
+              <div style={{ position: 'absolute', top: 36, left: 0, background: 'white', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', border: '1px solid #f0f0f0', minWidth: 180, zIndex: 201, overflow: 'hidden' }}>
+                <a href="/" onClick={() => setShowHomeMenu(false)} style={{ display: 'block', padding: '11px 16px', fontSize: 13, fontWeight: 600, color: '#333', textDecoration: 'none', borderBottom: '1px solid #f5f5f5' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = '#f9f9f9')} onMouseLeave={e => (e.currentTarget.style.background = 'white')}>🏠 Home</a>
+                <a href="/about" onClick={() => setShowHomeMenu(false)} style={{ display: 'block', padding: '11px 16px', fontSize: 13, fontWeight: 600, color: '#333', textDecoration: 'none', borderBottom: '1px solid #f5f5f5' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = '#f9f9f9')} onMouseLeave={e => (e.currentTarget.style.background = 'white')}>ℹ️ About</a>
+                <a href="/care" onClick={() => setShowHomeMenu(false)} style={{ display: 'block', padding: '11px 16px', fontSize: 13, fontWeight: 600, color: '#333', textDecoration: 'none' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = '#f9f9f9')} onMouseLeave={e => (e.currentTarget.style.background = 'white')}>🐾 Care for Strays</a>
+              </div>
+            </>
+          )}
+        </div>
         <div className="catmap-navbar-links" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <a href="/about" style={{ fontSize: 13, fontWeight: 600, color: '#444', textDecoration: 'none', padding: '6px 12px', borderRadius: 8 }}
             onMouseEnter={e => (e.currentTarget.style.background = '#f5f5f5')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>About</a>
