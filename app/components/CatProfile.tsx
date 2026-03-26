@@ -67,6 +67,8 @@ export default function CatProfile({ cat, onClose, onStatusChange }: CatProfileP
 
   const [showSightingModal, setShowSightingModal] = useState(false);
   const [note, setNote] = useState('');
+  const [sightingPhoto, setSightingPhoto] = useState<File | null>(null);
+  const [sightingPhotoPreview, setSightingPhotoPreview] = useState<string | null>(null);
   const [gpsLoading, setGpsLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [sightingSuccess, setSightingSuccess] = useState(false);
@@ -144,20 +146,26 @@ export default function CatProfile({ cat, onClose, onStatusChange }: CatProfileP
 
   function handleSightingClick() {
     if (!user) { alert('Please log in to log a sighting!'); return; }
-    setGpsError(''); setNote(''); setSightingSuccess(false);
+    setGpsError(''); setNote(''); setSightingPhoto(null); setSightingPhotoPreview(null); setSightingSuccess(false);
     setShowSightingModal(true);
   }
 
   async function handleSubmitSighting() {
+    if (!sightingPhoto) { setGpsError('Please add a photo of the cat.'); return; }
     setGpsLoading(true); setGpsError('');
     if (!navigator.geolocation) { setGpsError('Geolocation not supported.'); setGpsLoading(false); return; }
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         setGpsLoading(false); setSaving(true);
+        const filename = `sightings/${Date.now()}_${sightingPhoto.name}`;
+        const { error: uploadError } = await supabase.storage.from('cat-photos').upload(filename, sightingPhoto);
+        if (uploadError) { setGpsError('Photo upload failed: ' + uploadError.message); setSaving(false); return; }
+        const { data: urlData } = supabase.storage.from('cat-photos').getPublicUrl(filename);
         const { error } = await supabase.from('sightings').insert({
           cat_id: currentCat.id, user_id: user.id,
           lat: position.coords.latitude, lng: position.coords.longitude,
           note: note.trim() || null,
+          photo_url: urlData.publicUrl,
         });
         setSaving(false);
         if (error) { setGpsError('Failed to save: ' + error.message); }
@@ -389,7 +397,7 @@ export default function CatProfile({ cat, onClose, onStatusChange }: CatProfileP
 
       {showSightingModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>
-          <div style={{ background: 'white', borderRadius: 16, padding: 28, width: 340, boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+          <div style={{ background: 'white', borderRadius: 16, padding: 24, width: 340, boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
             {sightingSuccess ? (
               <div style={{ textAlign: 'center', padding: '20px 0' }}>
                 <div style={{ fontSize: 48, marginBottom: 12 }}>✅</div>
@@ -398,16 +406,44 @@ export default function CatProfile({ cat, onClose, onStatusChange }: CatProfileP
               </div>
             ) : (
               <>
-                <h2 style={{ margin: '0 0 6px', fontSize: 20 }}>📍 Log a Sighting</h2>
-                <p style={{ color: '#888', fontSize: 14, margin: '0 0 20px' }}>Your GPS location will be recorded anonymously.</p>
-                <label style={{ display: 'block', marginBottom: 4, fontWeight: 600, fontSize: 14 }}>Note <span style={{ color: '#aaa', fontWeight: 400 }}>(optional)</span></label>
+                <h2 style={{ margin: '0 0 4px', fontSize: 20 }}>📍 Log a Sighting</h2>
+                <p style={{ color: '#888', fontSize: 13, margin: '0 0 16px' }}>Photo required · GPS recorded anonymously</p>
+
+                {/* Photo picker */}
+                <input id="sighting-camera" type="file" accept="image/*" capture="environment" style={{ display: 'none' }}
+                  onChange={e => { const f = e.target.files?.[0]; if (f) { setSightingPhoto(f); setSightingPhotoPreview(URL.createObjectURL(f)); } }} />
+                <input id="sighting-gallery" type="file" accept="image/*" style={{ display: 'none' }}
+                  onChange={e => { const f = e.target.files?.[0]; if (f) { setSightingPhoto(f); setSightingPhotoPreview(URL.createObjectURL(f)); } }} />
+
+                {sightingPhotoPreview ? (
+                  <div style={{ position: 'relative', marginBottom: 14 }}>
+                    <img src={sightingPhotoPreview} alt="sighting" style={{ width: '100%', height: 160, objectFit: 'cover', borderRadius: 10, display: 'block' }} />
+                    <button onClick={() => { setSightingPhoto(null); setSightingPhotoPreview(null); }}
+                      style={{ position: 'absolute', top: 6, right: 6, background: 'rgba(0,0,0,0.5)', border: 'none', borderRadius: '50%', width: 26, height: 26, color: 'white', fontSize: 13, cursor: 'pointer' }}>✕</button>
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+                    <label htmlFor="sighting-camera" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '16px 8px', borderRadius: 10, border: '2px dashed #FF6B6B', cursor: 'pointer', background: '#fff8f8' }}>
+                      <span style={{ fontSize: 28 }}>📷</span>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: '#FF6B6B' }}>Take Photo</span>
+                    </label>
+                    <label htmlFor="sighting-gallery" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '16px 8px', borderRadius: 10, border: '2px dashed #ddd', cursor: 'pointer', background: '#fafafa' }}>
+                      <span style={{ fontSize: 28 }}>🖼️</span>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: '#555' }}>From Gallery</span>
+                    </label>
+                  </div>
+                )}
+
+                <label style={{ display: 'block', marginBottom: 4, fontWeight: 600, fontSize: 13, color: '#444' }}>Note <span style={{ color: '#aaa', fontWeight: 400 }}>(optional)</span></label>
                 <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. Looks healthy, near the park bench"
-                  style={{ width: '100%', padding: 10, borderRadius: 8, border: '1px solid #ddd', boxSizing: 'border-box', height: 80, fontSize: 14, resize: 'none', marginBottom: 16 }} />
-                {gpsError && <p style={{ color: '#F44336', fontSize: 13, marginBottom: 12 }}>{gpsError}</p>}
+                  style={{ width: '100%', padding: 10, borderRadius: 8, border: '1px solid #ddd', boxSizing: 'border-box', height: 70, fontSize: 14, resize: 'none', marginBottom: 14 }} />
+
+                {gpsError && <p style={{ color: '#F44336', fontSize: 13, margin: '0 0 12px' }}>{gpsError}</p>}
                 <div style={{ display: 'flex', gap: 10 }}>
                   <button onClick={() => setShowSightingModal(false)} style={{ flex: 1, padding: 12, borderRadius: 8, border: '1px solid #ddd', background: 'white', cursor: 'pointer', fontSize: 14 }}>Cancel</button>
-                  <button onClick={handleSubmitSighting} disabled={gpsLoading || saving} style={{ flex: 1, padding: 12, borderRadius: 8, border: 'none', background: '#FF6B6B', color: 'white', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
-                    {gpsLoading ? '📍 Getting GPS...' : saving ? 'Saving...' : 'Log Sighting'}
+                  <button onClick={handleSubmitSighting} disabled={!sightingPhoto || gpsLoading || saving}
+                    style={{ flex: 1, padding: 12, borderRadius: 8, border: 'none', background: sightingPhoto ? '#FF6B6B' : '#eee', color: sightingPhoto ? 'white' : '#aaa', cursor: sightingPhoto ? 'pointer' : 'default', fontSize: 14, fontWeight: 600 }}>
+                    {gpsLoading ? '📍 Getting GPS...' : saving ? 'Uploading...' : 'Log Sighting'}
                   </button>
                 </div>
               </>

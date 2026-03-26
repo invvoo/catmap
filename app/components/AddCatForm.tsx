@@ -376,12 +376,22 @@ export default function AddCatForm({ lat, lng, onClose, onSaved }: AddCatFormPro
     if (!navigator.geolocation) { setSightingError('Geolocation not supported.'); setSightingLoading(false); return; }
     navigator.geolocation.getCurrentPosition(
       async (position) => {
+        let photo_url = null;
+        if (photoFile) {
+          const filename = `sightings/${Date.now()}_${photoFile.name}`;
+          const { error: uploadError } = await supabase.storage.from('cat-photos').upload(filename, photoFile);
+          if (!uploadError) {
+            const { data: urlData } = supabase.storage.from('cat-photos').getPublicUrl(filename);
+            photo_url = urlData.publicUrl;
+          }
+        }
         const { error } = await supabase.from('sightings').insert({
           cat_id: selectedMatchId,
           user_id: user.id,
           lat: position.coords.latitude,
           lng: position.coords.longitude,
           note: null,
+          photo_url,
         });
         setSightingLoading(false);
         if (error) { setSightingError('Failed to log sighting: ' + error.message); }
