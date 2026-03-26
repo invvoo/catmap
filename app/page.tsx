@@ -290,12 +290,22 @@ export default function Home() {
   }
 
   return (
-    <main style={{ width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <main style={{ width: '100vw', height: '100dvh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <style>{`
+        @media (max-width: 640px) {
+          .catmap-map { flex: 1 1 0% !important; min-height: 0 !important; }
+          .catmap-feed { flex: 0 0 210px !important; }
+          .catmap-feed-cards { overflow-y: auto !important; flex-wrap: wrap !important; align-content: flex-start !important; }
+          .catmap-navbar { padding: 8px 12px !important; }
+          .catmap-navbar-links { display: none !important; }
+          .catmap-met-btn { font-size: 12px !important; padding: 7px 12px !important; }
+        }
+      `}</style>
 
       {/* ── NAVBAR ── */}
-      <div style={{ flexShrink: 0, background: 'white', padding: '10px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 2px 10px rgba(0,0,0,0.08)', zIndex: 100 }}>
+      <div className="catmap-navbar" style={{ flexShrink: 0, background: 'white', padding: '10px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 2px 10px rgba(0,0,0,0.08)', zIndex: 100 }}>
         <a href="/" style={{ fontSize: 20, fontWeight: 700, textDecoration: 'none', color: '#222' }}>🐱 CatMap</a>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <div className="catmap-navbar-links" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <a href="/about" style={{ fontSize: 13, fontWeight: 600, color: '#444', textDecoration: 'none', padding: '6px 12px', borderRadius: 8 }}
             onMouseEnter={e => (e.currentTarget.style.background = '#f5f5f5')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>About</a>
           <a href="/care" style={{ fontSize: 13, fontWeight: 600, color: '#444', textDecoration: 'none', padding: '6px 12px', borderRadius: 8 }}
@@ -303,7 +313,7 @@ export default function Home() {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {gpsError && <span style={{ fontSize: 13, color: '#F44336', maxWidth: 200 }}>{gpsError}</span>}
-          <button onClick={handleMetACat} disabled={gpsLoading} style={{ padding: '9px 18px', borderRadius: 8, border: 'none', background: gpsLoading ? '#ffccbc' : '#FF6B6B', color: 'white', fontWeight: 700, fontSize: 14, cursor: gpsLoading ? 'default' : 'pointer' }}>
+          <button className="catmap-met-btn" onClick={handleMetACat} disabled={gpsLoading} style={{ padding: '9px 18px', borderRadius: 8, border: 'none', background: gpsLoading ? '#ffccbc' : '#FF6B6B', color: 'white', fontWeight: 700, fontSize: 14, cursor: gpsLoading ? 'default' : 'pointer' }}>
             {gpsLoading ? '📍 Getting location...' : '🐱 I met a cat!'}
           </button>
           {user ? (
@@ -344,7 +354,7 @@ export default function Home() {
       </div>
 
       {/* ── MAP ── */}
-      <div style={{ flex: '0 0 70%', minHeight: 0, position: 'relative' }}>
+      <div className="catmap-map" style={{ flex: '0 0 70%', minHeight: 0, position: 'relative' }}>
         <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
         {selectedCat && popupPixel && (
           <MapPopup cat={selectedCat} pixelPos={popupPixel} onClose={() => { setSelectedCat(null); setPopupPixel(null); }} userLocation={userLocation} mapRef={mapRef} />
@@ -352,14 +362,14 @@ export default function Home() {
       </div>
 
       {/* ── FEED ── */}
-      <div style={{ flex: '0 0 30%', minHeight: 0, background: 'white', borderTop: '2px solid #f0f0f0', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div className="catmap-feed" style={{ flex: '0 0 30%', minHeight: 0, background: 'white', borderTop: '2px solid #f0f0f0', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <div style={{ flexShrink: 0, padding: '8px 16px 4px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span style={{ fontSize: 13, fontWeight: 700, color: '#555', display: 'flex', alignItems: 'center', gap: 6 }}>
             🐾 CATS NEAR YOU{visibleCount > 0 && <span style={{ fontSize: 11, color: '#bbb', fontWeight: 400 }}>{visibleCount} in view</span>}
           </span>
           {!userLocation && <span style={{ fontSize: 11, color: '#bbb' }}>Enable GPS for local results</span>}
         </div>
-        <div style={{ flex: 1, overflowX: 'auto', overflowY: 'hidden', display: 'flex', alignItems: 'flex-start', padding: '6px 12px 8px', gap: 10 }}>
+        <div className="catmap-feed-cards" style={{ flex: 1, overflowX: 'auto', overflowY: 'hidden', display: 'flex', alignItems: 'flex-start', padding: '6px 12px 8px', gap: 10 }}>
           {feedCats.length === 0 ? (
             <div style={{ display: 'flex', alignItems: 'center', color: '#ccc', fontSize: 13, whiteSpace: 'nowrap', paddingLeft: 4 }}>
               {userLocation ? 'No cats spotted within 2 miles yet 🐾' : 'Loading...'}
