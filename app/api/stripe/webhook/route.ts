@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (event.type === 'checkout.session.completed') {
-    const session = event.data.object as Stripe.CheckoutSession;
+    const session = event.data.object as Stripe.Checkout.Session;
     const { bountyId, userId, amount } = session.metadata || {};
 
     if (bountyId && amount) {
