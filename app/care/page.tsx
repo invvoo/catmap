@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import Navbar from '../components/Navbar';
 
 export default function CarePage() {
   const [activeSection, setActiveSection] = useState('');
@@ -216,15 +217,7 @@ export default function CarePage() {
 
       <div className="care-page">
 
-        {/* Nav */}
-        <nav className="nav">
-          <a href="/" className="nav-logo">🐱 CatMap</a>
-          <div className="nav-links">
-            <a href="/" className="nav-link">Map</a>
-            <a href="/about" className="nav-link">About</a>
-            <a href="/care" className="nav-link active">Care for Strays</a>
-          </div>
-        </nav>
+        <Navbar />
 
         {/* Hero */}
         <div className="hero">

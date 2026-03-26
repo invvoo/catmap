@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic';
 
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
+import Navbar from '../components/Navbar';
 
 function timeAgo(dateStr) {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -29,21 +30,11 @@ export default function MessagesPage() {
   const threadEndRef = useRef(null);
   const channelRef = useRef(null);
 
-  // Navbar state
-  const [navProfile, setNavProfile] = useState(null);
-  const [navUnread, setNavUnread] = useState(0);
-  const [navNotifUnread, setNavNotifUnread] = useState(0);
-  const [showNavMenu, setShowNavMenu] = useState(false);
-  const [navGpsLoading, setNavGpsLoading] = useState(false);
-
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       if (!data.user) { window.location.href = '/login'; return; }
       setCurrentUser(data.user);
       loadConversations(data.user.id);
-      supabase.from('profiles').select('display_name,avatar_url').eq('id', data.user.id).maybeSingle().then(({ data: p }) => setNavProfile(p));
-      supabase.from('messages').select('id', { count: 'exact' }).eq('to_id', data.user.id).eq('read', false).then(({ count }) => setNavUnread(count || 0));
-      supabase.from('notifications').select('id', { count: 'exact' }).eq('user_id', data.user.id).eq('read', false).then(({ count }) => setNavNotifUnread(count || 0));
     });
   }, []);
 
@@ -134,56 +125,12 @@ export default function MessagesPage() {
     }
   }
 
-  async function handleNavLogout() { await supabase.auth.signOut(); window.location.href = '/'; }
-  function handleNavMetACat() { window.location.href = '/'; }
-
   const displayName = (profile) => profile?.display_name || 'Anonymous';
   const avatarLetter = (profile) => (profile?.display_name || profile?.id || '?')[0].toUpperCase();
 
-  const NAV = (
-    <div style={{ flexShrink: 0, background: 'white', padding: '10px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 2px 10px rgba(0,0,0,0.08)', zIndex: 100 }}>
-      <a href="/" style={{ fontSize: 20, fontWeight: 700, textDecoration: 'none', color: '#222' }}>🐱 CatMap</a>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-        <a href="/about" style={{ fontSize: 13, fontWeight: 600, color: '#444', textDecoration: 'none', padding: '6px 12px', borderRadius: 8 }}>About</a>
-        <a href="/care" style={{ fontSize: 13, fontWeight: 600, color: '#444', textDecoration: 'none', padding: '6px 12px', borderRadius: 8 }}>🐾 Care for Strays</a>
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <button onClick={handleNavMetACat} style={{ padding: '9px 18px', borderRadius: 8, border: 'none', background: '#FF6B6B', color: 'white', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>🐱 I met a cat!</button>
-        {currentUser ? (
-          <div style={{ position: 'relative' }}>
-            <div onClick={() => setShowNavMenu(v => !v)} style={{ width: 36, height: 36, borderRadius: '50%', background: '#FF6B6B', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 15, cursor: 'pointer', border: '2px solid #ffccbc', overflow: 'hidden' }}>
-              {navProfile?.avatar_url ? <img src={navProfile.avatar_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span>{currentUser.email?.[0]?.toUpperCase() ?? '?'}</span>}
-            </div>
-            {showNavMenu && (
-              <>
-                <div onClick={() => setShowNavMenu(false)} style={{ position: 'fixed', inset: 0, zIndex: 200 }} />
-                <div style={{ position: 'absolute', top: 44, right: 0, background: 'white', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', border: '1px solid #f0f0f0', minWidth: 190, zIndex: 201, overflow: 'hidden' }}>
-                  <div style={{ padding: '12px 16px', borderBottom: '1px solid #f5f5f5' }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: '#222' }}>{navProfile?.display_name || 'Anonymous'}</div>
-                    <div style={{ fontSize: 11, color: '#aaa' }}>{currentUser.email}</div>
-                  </div>
-                  <a href={`/profile/${currentUser.id}`} style={{ display: 'block', padding: '11px 16px', fontSize: 13, fontWeight: 600, color: '#333', textDecoration: 'none', borderBottom: '1px solid #f5f5f5' }}>👤 View Profile</a>
-                  <a href="/messages" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 16px', fontSize: 13, fontWeight: 600, color: '#333', textDecoration: 'none', borderBottom: '1px solid #f5f5f5' }}>
-                    <span>✉️ Messages</span>{navUnread > 0 && <span style={{ background: '#FF6B6B', color: 'white', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 800 }}>{navUnread}</span>}
-                  </a>
-                  <a href="/notifications" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 16px', fontSize: 13, fontWeight: 600, color: '#333', textDecoration: 'none', borderBottom: '1px solid #f5f5f5' }}>
-                    <span>🔔 Notifications</span>{navNotifUnread > 0 && <span style={{ background: '#FF6B6B', color: 'white', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 800 }}>{navNotifUnread}</span>}
-                  </a>
-                  <button onClick={handleNavLogout} style={{ width: '100%', padding: '11px 16px', border: 'none', background: 'white', textAlign: 'left', fontSize: 13, color: '#F44336', fontWeight: 600, cursor: 'pointer' }}>Sign out</button>
-                </div>
-              </>
-            )}
-          </div>
-        ) : (
-          <a href="/login" style={{ padding: '8px 20px', borderRadius: 8, background: '#333', color: 'white', textDecoration: 'none', fontWeight: 600, fontSize: 14 }}>Log in</a>
-        )}
-      </div>
-    </div>
-  );
-
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', fontFamily: 'system-ui, sans-serif', background: '#f7f7f7' }}>
-      {NAV}
+      <Navbar />
       <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
         {/* Conversation list */}
         <div style={{ width: 300, flexShrink: 0, background: 'white', borderRight: '1px solid #f0f0f0', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
