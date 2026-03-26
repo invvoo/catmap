@@ -121,7 +121,7 @@ async function getExifLocation(file: File): Promise<{ lat: number; lng: number }
               if (tag === 4) lng = decimal;
             }
           }
-          if (lat !== null && lng !== null) resolve({ lat: latRef === 'S' ? -lat : lat, lng: lngRef === 'W' ? -lng : lng });
+          if (lat !== null && lng !== null && isFinite(lat) && isFinite(lng)) resolve({ lat: latRef === 'S' ? -lat : lat, lng: lngRef === 'W' ? -lng : lng });
           else resolve(null);
           return;
         }
@@ -454,10 +454,12 @@ export default function AddCatForm({ lat, lng, onClose, onSaved }: AddCatFormPro
       notes: notes || null,
     };
 
+    const safeLat = isFinite(extractedLat) ? extractedLat : lat;
+    const safeLng = isFinite(extractedLng) ? extractedLng : lng;
     const { error } = await supabase.from('cats').insert({
       name: catName, status,
-      lat: extractedLat,
-      lng: extractedLng,
+      lat: safeLat,
+      lng: safeLng,
       image_url,
       attributes,
     });

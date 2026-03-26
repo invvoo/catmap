@@ -255,7 +255,7 @@ export default function CatProfile({ cat, onClose, onStatusChange }: CatProfileP
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
             <span style={{ color: '#888', fontSize: 14 }}>Location</span>
-            <span style={{ fontSize: 14, fontWeight: 600 }}>{currentCat.lat.toFixed(4)}, {currentCat.lng.toFixed(4)}</span>
+            <span style={{ fontSize: 14, fontWeight: 600 }}>{currentCat.lat != null ? currentCat.lat.toFixed(4) : '—'}, {currentCat.lng != null ? currentCat.lng.toFixed(4) : '—'}</span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: lastSighting ? 8 : 0 }}>
             <span style={{ color: '#888', fontSize: 14 }}>Total sightings</span>
