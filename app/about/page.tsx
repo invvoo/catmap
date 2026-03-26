@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import Navbar from '../components/Navbar';
 
 export default function AboutPage() {
   const paragraphsRef = useRef<HTMLDivElement>(null);
@@ -225,14 +226,7 @@ export default function AboutPage() {
       `}</style>
 
       <div className="about-page">
-        <nav className="nav">
-          <a href="/" className="nav-logo">🐱 CatMap</a>
-          <div className="nav-links">
-            <a href="/" className="nav-link">Map</a>
-            <a href="/about" className="nav-link active">About</a>
-            <a href="/care" className="nav-link">Care for Strays</a>
-          </div>
-        </nav>
+        <Navbar />
 
         <div className="hero">
           <div className="hero-eyebrow">Our Story</div>

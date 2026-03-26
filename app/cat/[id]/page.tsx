@@ -4,7 +4,7 @@
 'use client';
 export const dynamic = 'force-dynamic';
 import { supabase } from '../../../lib/supabase';
-
+import Navbar from '../../components/Navbar';
 
 import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'next/navigation';
@@ -103,44 +103,6 @@ export default function CatPage() {
   const [nameSaving, setNameSaving] = useState(false);
   const [nameSaved, setNameSaved] = useState(false);
 
-  // ── NAVBAR STATE ──
-  const [navUser, setNavUser] = useState<any>(null);
-  const [navProfile, setNavProfile] = useState<any>(null);
-  const [navUnread, setNavUnread] = useState(0);
-  const [showNavMenu, setShowNavMenu] = useState(false);
-  const [navGpsLoading, setNavGpsLoading] = useState(false);
-
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setNavUser(data.user);
-      if (data.user) {
-        supabase.from('profiles').select('display_name,avatar_url').eq('id', data.user.id).maybeSingle()
-          .then(({ data: p }) => setNavProfile(p));
-        supabase.from('messages').select('id', { count: 'exact' }).eq('to_id', data.user.id).eq('read', false)
-          .then(({ count }) => setNavUnread(count || 0));
-      }
-    });
-    const { data: listener } = supabase.auth.onAuthStateChange((_e, session) => {
-      setNavUser(session?.user ?? null);
-      if (!session?.user) { setNavProfile(null); setNavUnread(0); }
-    });
-    return () => listener.subscription.unsubscribe();
-  }, []);
-
-  function handleNavMetACat() {
-    if (!navUser) { window.location.href = '/login'; return; }
-    setNavGpsLoading(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => { setNavGpsLoading(false); window.location.href = '/'; },
-      () => { setNavGpsLoading(false); window.location.href = '/'; },
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
-  }
-
-  async function handleNavLogout() {
-    await supabase.auth.signOut();
-    window.location.href = '/';
-  }
 
   useEffect(() => {
     if (!catId) return;
@@ -500,62 +462,7 @@ export default function CatPage() {
   return (
     <div style={{ minHeight: '100vh', background: '#f7f7f7' }}>
 
-      {/* ── NAVBAR ── */}
-      <div style={{ flexShrink: 0, background: 'white', padding: '10px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 2px 10px rgba(0,0,0,0.08)', zIndex: 100, position: 'sticky', top: 0 }}>
-        <a href="/" style={{ fontSize: 20, fontWeight: 700, textDecoration: 'none', color: '#222' }}>🐱 CatMap</a>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <a href="/about" style={{ fontSize: 13, fontWeight: 600, color: '#444', textDecoration: 'none', padding: '6px 12px', borderRadius: 8 }}
-            onMouseEnter={e => (e.currentTarget.style.background = '#f5f5f5')}
-            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>About</a>
-          <a href="/care" style={{ fontSize: 13, fontWeight: 600, color: '#444', textDecoration: 'none', padding: '6px 12px', borderRadius: 8 }}
-            onMouseEnter={e => (e.currentTarget.style.background = '#f5f5f5')}
-            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>🐾 Care for Strays</a>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <button onClick={handleNavMetACat} disabled={navGpsLoading}
-            style={{ padding: '9px 18px', borderRadius: 8, border: 'none', background: navGpsLoading ? '#ffccbc' : '#FF6B6B', color: 'white', fontWeight: 700, fontSize: 14, cursor: navGpsLoading ? 'default' : 'pointer' }}>
-            {navGpsLoading ? '📍 Getting location...' : '🐱 I met a cat!'}
-          </button>
-          {navUser ? (
-            <div style={{ position: 'relative' }}>
-              <div onClick={() => setShowNavMenu(v => !v)}
-                style={{ width: 36, height: 36, borderRadius: '50%', background: '#FF6B6B', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 15, cursor: 'pointer', border: '2px solid #ffccbc', overflow: 'hidden', flexShrink: 0 }}>
-                {navProfile?.avatar_url
-                  ? <img src={navProfile.avatar_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  : <span>{navUser.email?.[0]?.toUpperCase() ?? '?'}</span>}
-              </div>
-              {showNavMenu && (
-                <>
-                  <div onClick={() => setShowNavMenu(false)} style={{ position: 'fixed', inset: 0, zIndex: 200 }} />
-                  <div style={{ position: 'absolute', top: 44, right: 0, background: 'white', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', border: '1px solid #f0f0f0', minWidth: 190, zIndex: 201, overflow: 'hidden' }}>
-                    <div style={{ padding: '12px 16px', borderBottom: '1px solid #f5f5f5' }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: '#222', marginBottom: 1 }}>{navProfile?.display_name || 'Anonymous'}</div>
-                      <div style={{ fontSize: 11, color: '#aaa', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{navUser.email}</div>
-                    </div>
-                    <a href={`/profile/${navUser.id}`} onClick={() => setShowNavMenu(false)}
-                      style={{ display: 'block', padding: '11px 16px', fontSize: 13, fontWeight: 600, color: '#333', textDecoration: 'none', borderBottom: '1px solid #f5f5f5' }}
-                      onMouseEnter={e => (e.currentTarget.style.background = '#f9f9f9')}
-                      onMouseLeave={e => (e.currentTarget.style.background = 'white')}>👤 View Profile</a>
-                    <a href="/messages" onClick={() => setShowNavMenu(false)}
-                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 16px', fontSize: 13, fontWeight: 600, color: '#333', textDecoration: 'none', borderBottom: '1px solid #f5f5f5' }}
-                      onMouseEnter={e => (e.currentTarget.style.background = '#f9f9f9')}
-                      onMouseLeave={e => (e.currentTarget.style.background = 'white')}>
-                      <span>✉️ Messages</span>
-                      {navUnread > 0 && <span style={{ background: '#FF6B6B', color: 'white', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 800 }}>{navUnread > 9 ? '9+' : navUnread}</span>}
-                    </a>
-                    <button onClick={handleNavLogout}
-                      style={{ width: '100%', padding: '11px 16px', border: 'none', background: 'white', textAlign: 'left', fontSize: 13, color: '#F44336', fontWeight: 600, cursor: 'pointer' }}
-                      onMouseEnter={e => (e.currentTarget.style.background = '#fff5f5')}
-                      onMouseLeave={e => (e.currentTarget.style.background = 'white')}>Sign out</button>
-                  </div>
-                </>
-              )}
-            </div>
-          ) : (
-            <a href="/login" style={{ padding: '8px 20px', borderRadius: 8, background: '#333', color: 'white', textDecoration: 'none', fontWeight: 600, fontSize: 14 }}>Log in</a>
-          )}
-        </div>
-      </div>
+      <Navbar />
 
       {isLost && (
         <div style={{ background: '#F44336', color: 'white', textAlign: 'center', padding: '12px 16px', fontSize: 15, fontWeight: 700 }}>
