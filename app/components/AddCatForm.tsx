@@ -193,8 +193,12 @@ export default function AddCatForm({ lat, lng, onClose, onSaved }: AddCatFormPro
 
   // Nearby duplicates
   const [nearbyCats, setNearbyCats] = useState<NearbyCat[]>([]);
+  const [allNearbyCats, setAllNearbyCats] = useState<NearbyCat[]>([]);
+  const [showMoreMatches, setShowMoreMatches] = useState(false);
   const [nearbyDismissed, setNearbyDismissed] = useState(false);
   const [saveMatches, setSaveMatches] = useState<NearbyCat[]>([]);
+  const [allSaveMatches, setAllSaveMatches] = useState<NearbyCat[]>([]);
+  const [showMoreSaveMatches, setShowMoreSaveMatches] = useState(false);
   const [lostMatches, setLostMatches] = useState<NearbyCat[]>([]);
   const [showSaveMatchModal, setShowSaveMatchModal] = useState(false);
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
@@ -221,19 +225,27 @@ export default function AddCatForm({ lat, lng, onClose, onSaved }: AddCatFormPro
     const { data, error } = await supabase.from('cats').select('id, name, image_url, lat, lng, attributes');
     if (error || !data) return [];
     const hasAttrs = formAttrs && Object.values(formAttrs).some((v: any) => v && v !== 'Unknown');
-    const nearby = data
-      .map((cat) => {
-        const distance = distanceFeet(checkLat, checkLng, cat.lat, cat.lng);
-        const { score, label, fields } = formAttrs ? scoreMatch(formAttrs, cat.attributes) : { score: 0, label: 'Nearby', fields: [] };
-        return { ...cat, distance, matchScore: score, matchLabel: label, matchedFields: fields };
-      })
+    const scored = data.map((cat) => {
+      const distance = distanceFeet(checkLat, checkLng, cat.lat, cat.lng);
+      const { score, label, fields } = formAttrs ? scoreMatch(formAttrs, cat.attributes) : { score: 0, label: 'Nearby', fields: [] };
+      return { ...cat, distance, matchScore: score, matchLabel: label, matchedFields: fields };
+    });
+    // Primary matches: tight radius + score threshold
+    const nearby = scored
       .filter((cat) => {
         if (cat.distance > 420) return false;
         if (hasAttrs) return cat.matchScore >= 4;
         return true;
       })
       .sort((a, b) => b.matchScore - a.matchScore || a.distance - b.distance);
+    // "Show more" pool: 1-mile radius, any score, excluding already shown
+    const primaryIds = new Set(nearby.map(c => c.id));
+    const allNearby = scored
+      .filter(cat => cat.distance <= 5280 && !primaryIds.has(cat.id))
+      .sort((a, b) => b.matchScore - a.matchScore || a.distance - b.distance);
     setNearbyCats(nearby);
+    setAllNearbyCats(allNearby);
+    setShowMoreMatches(false);
     setNearbyDismissed(false);
     return nearby;
   }
@@ -413,19 +425,26 @@ export default function AddCatForm({ lat, lng, onClose, onSaved }: AddCatFormPro
         .filter(cat => cat.distance <= MATCH_RADIUS)
         .sort((a, b) => b.matchScore - a.matchScore || a.distance - b.distance);
 
-      const matches = data
+      const scoredNonLost = data
         .filter(cat => cat.status !== 'lost')
         .map(cat => {
           const distance = distanceFeet(extractedLat, extractedLng, cat.lat, cat.lng);
           const { score, label, fields } = scoreMatch(currentAttrs, cat.attributes);
           return { ...cat, distance, matchScore: score, matchLabel: label, matchedFields: fields };
-        })
+        });
+      const matches = scoredNonLost
         .filter(cat => cat.distance <= MATCH_RADIUS && cat.matchScore >= 4)
         .sort((a, b) => b.matchScore - a.matchScore || a.distance - b.distance);
+      const matchIds = new Set(matches.map(c => c.id));
+      const allMatches = scoredNonLost
+        .filter(cat => cat.distance <= MATCH_RADIUS && !matchIds.has(cat.id))
+        .sort((a, b) => b.matchScore - a.matchScore || a.distance - b.distance);
 
-      if (lost.length > 0 || matches.length > 0) {
+      if (lost.length > 0 || matches.length > 0 || allMatches.length > 0) {
         setLostMatches(lost);
         setSaveMatches(matches);
+        setAllSaveMatches(allMatches);
+        setShowMoreSaveMatches(false);
         setShowSaveMatchModal(true);
         return;
       }
@@ -534,6 +553,22 @@ export default function AddCatForm({ lat, lng, onClose, onSaved }: AddCatFormPro
               if (lostMatches.find(l => l.id === cat.id)) return null;
               return renderMatchCard(cat, '#FF9800', '#fff8e1', '#eee');
             })}
+
+            {/* Show more nearby cats */}
+            {allNearbyCats.length > 0 && (
+              <div style={{ marginTop: 4 }}>
+                <button onClick={() => setShowMoreMatches(v => !v)}
+                  style={{ width: '100%', padding: '9px 0', borderRadius: 8, border: '1px dashed #ddd', background: '#fafafa', fontSize: 13, cursor: 'pointer', color: '#888', fontWeight: 600 }}>
+                  {showMoreMatches ? '▲ Show fewer' : `▼ Show ${allNearbyCats.length} more nearby cat${allNearbyCats.length !== 1 ? 's' : ''}`}
+                </button>
+                {showMoreMatches && (
+                  <div style={{ marginTop: 8 }}>
+                    <div style={{ fontSize: 12, color: '#aaa', marginBottom: 8, textAlign: 'center' }}>Sorted by distance — tap any to log a sighting</div>
+                    {allNearbyCats.map(cat => renderMatchCard(cat, '#78909C', '#f5f5f5', '#e0e0e0'))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {sightingError && <div style={{ background: '#fff3f3', border: '1px solid #ffcdd2', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 13, color: '#c62828' }}>⚠️ {sightingError}</div>}
 
@@ -777,6 +812,45 @@ export default function AddCatForm({ lat, lng, onClose, onSaved }: AddCatFormPro
                 })}
               </>
             )}
+            {/* Show more nearby cats in save-match modal */}
+            {allSaveMatches.length > 0 && (
+              <div style={{ marginTop: 4, marginBottom: 8 }}>
+                <button onClick={() => setShowMoreSaveMatches(v => !v)}
+                  style={{ width: '100%', padding: '9px 0', borderRadius: 8, border: '1px dashed #ddd', background: '#fafafa', fontSize: 13, cursor: 'pointer', color: '#888', fontWeight: 600 }}>
+                  {showMoreSaveMatches ? '▲ Show fewer' : `▼ Show ${allSaveMatches.length} more nearby cat${allSaveMatches.length !== 1 ? 's' : ''}`}
+                </button>
+                {showMoreSaveMatches && (
+                  <div style={{ marginTop: 8 }}>
+                    <div style={{ fontSize: 12, color: '#aaa', marginBottom: 8, textAlign: 'center' }}>All cats within 1 mile — sorted by distance</div>
+                    {allSaveMatches.map((cat) => {
+                      const isSelected = selectedMatchId === cat.id;
+                      return (
+                        <div key={cat.id} style={{ marginBottom: 10, borderRadius: 10, border: isSelected ? '2px solid #78909C' : '2px solid #e0e0e0', background: isSelected ? '#f5f5f5' : 'white', overflow: 'hidden' }}>
+                          <div onClick={() => setSelectedMatchId(isSelected ? null : cat.id)} style={{ display: 'flex', gap: 12, alignItems: 'center', padding: 10, cursor: 'pointer' }}>
+                            {cat.image_url ? <img src={cat.image_url} alt={cat.name} style={{ width: 52, height: 52, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} /> : <div style={{ width: 52, height: 52, borderRadius: '50%', background: '#f0f0f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>🐱</div>}
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                                <span style={{ fontWeight: 700, fontSize: 14 }}>{cat.name}</span>
+                                {isSelected && <span style={{ fontSize: 11, color: '#78909C', fontWeight: 700 }}>✓</span>}
+                              </div>
+                              <div style={{ fontSize: 12, color: '#888' }}>{Math.round(cat.distance)} ft away{cat.matchedFields.length > 0 ? ` · ${cat.matchedFields.join(', ')}` : ''}</div>
+                              {cat.attributes?.coat && <div style={{ fontSize: 12, color: '#777', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cat.attributes.coat}</div>}
+                            </div>
+                          </div>
+                          <div style={{ borderTop: '1px solid #e0e0e0', display: 'flex' }}>
+                            <a href={`/cat/${cat.id}`} target="_blank" rel="noopener noreferrer" style={{ flex: 1, padding: '7px 0', textAlign: 'center', fontSize: 12, fontWeight: 600, color: '#78909C', textDecoration: 'none', background: '#fafafa' }}>👁️ View</a>
+                            <button onClick={() => setSelectedMatchId(isSelected ? null : cat.id)} style={{ flex: 1, padding: '7px 0', border: 'none', borderLeft: '1px solid #e0e0e0', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: isSelected ? '#78909C' : 'white', color: isSelected ? 'white' : '#555' }}>
+                              {isSelected ? '✓ Matched' : 'Select'}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
             {sightingError && <div style={{ background: '#fff3f3', border: '1px solid #ffcdd2', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 13, color: '#c62828' }}>⚠️ {sightingError}</div>}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 8 }}>
               {selectedMatchId && (
