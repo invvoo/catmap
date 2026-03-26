@@ -365,7 +365,7 @@ export default function AddCatForm({ lat, lng, onClose, onSaved }: AddCatFormPro
     });
     setSightingLoading(false);
     if (error) { setSightingError('Failed to log sighting: ' + error.message); }
-    else { onSaved(); onClose(); }
+    else { onSaved(); onClose(); window.location.href = `/cat/${selectedMatchId}`; }
   }
 
   async function handleSubmit() {
@@ -433,9 +433,9 @@ export default function AddCatForm({ lat, lng, onClose, onSaved }: AddCatFormPro
     };
     const safeLat = isFinite(extractedLat) ? extractedLat : lat;
     const safeLng = isFinite(extractedLng) ? extractedLng : lng;
-    const { error } = await supabase.from('cats').insert({ name: catName, status, lat: safeLat, lng: safeLng, image_url, attributes });
+    const { data: inserted, error } = await supabase.from('cats').insert({ name: catName, status, lat: safeLat, lng: safeLng, image_url, attributes }).select('id').single();
     if (error) { alert('Error saving cat: ' + error.message); }
-    else { onSaved(); onClose(); }
+    else { onSaved(); onClose(); if (inserted?.id) window.location.href = `/cat/${inserted.id}`; }
     setSaving(false);
   }
 
