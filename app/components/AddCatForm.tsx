@@ -239,17 +239,50 @@ export default function AddCatForm({ lat, lng, onClose, onSaved }: AddCatFormPro
     return nearby;
   }
 
-  async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>, source: 'camera' | 'gallery') {
     const file = e.target.files?.[0];
     if (!file) return;
     setAiError('');
     setAiApplied(false);
-    const location = await getExifLocation(file);
-    if (location) { setExtractedLat(location.lat); setExtractedLng(location.lng); setLocationSource('photo'); }
-    else { setLocationSource('map'); }
     setPhotoFile(file);
     setPhotoPreview(URL.createObjectURL(file));
-    runAnalyse(file, location?.lat ?? lat, location?.lng ?? lng);
+
+    if (source === 'camera') {
+      // Camera shot — use device's current GPS position
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const useLat = pos.coords.latitude;
+            const useLng = pos.coords.longitude;
+            setExtractedLat(useLat);
+            setExtractedLng(useLng);
+            setLocationSource('photo');
+            runAnalyse(file, useLat, useLng);
+          },
+          () => {
+            // GPS denied — fall back to map pin location
+            setLocationSource('map');
+            runAnalyse(file, lat, lng);
+          },
+          { enableHighAccuracy: true, timeout: 8000 }
+        );
+      } else {
+        setLocationSource('map');
+        runAnalyse(file, lat, lng);
+      }
+    } else {
+      // Gallery upload — extract EXIF location from the photo itself
+      const exif = await getExifLocation(file);
+      if (exif) {
+        setExtractedLat(exif.lat);
+        setExtractedLng(exif.lng);
+        setLocationSource('photo');
+        runAnalyse(file, exif.lat, exif.lng);
+      } else {
+        setLocationSource('map');
+        runAnalyse(file, lat, lng);
+      }
+    }
   }
 
   async function runAnalyse(file: File, useLat: number, useLng: number) {
@@ -418,8 +451,8 @@ export default function AddCatForm({ lat, lng, onClose, onSaved }: AddCatFormPro
             <p style={{ color: '#888', fontSize: 14, margin: '0 0 28px', lineHeight: 1.5 }}>
               Take or upload a photo to identify the cat and check for matches.
             </p>
-            <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" onChange={handlePhotoChange} style={{ display: 'none' }} />
-            <input ref={galleryInputRef} type="file" accept="image/*" onChange={handlePhotoChange} style={{ display: 'none' }} />
+            <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" onChange={e => handlePhotoChange(e, 'camera')} style={{ display: 'none' }} />
+            <input ref={galleryInputRef} type="file" accept="image/*" onChange={e => handlePhotoChange(e, 'gallery')} style={{ display: 'none' }} />
             <button onClick={() => cameraInputRef.current?.click()}
               style={{ width: '100%', padding: '16px 0', borderRadius: 12, border: 'none', background: '#FF6B6B', color: 'white', fontWeight: 700, fontSize: 16, cursor: 'pointer', marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
               <span style={{ fontSize: 22 }}>📷</span> Open Camera
