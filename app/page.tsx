@@ -293,11 +293,12 @@ export default function Home() {
     <main style={{ width: '100vw', height: '100dvh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <style>{`
         @media (max-width: 640px) {
-          .catmap-map { flex: 0 0 52% !important; }
-          .catmap-feed { flex: 0 0 48% !important; }
+          .catmap-map { flex: 1 1 0% !important; min-height: 0 !important; }
+          .catmap-feed { flex: 0 0 210px !important; }
           .catmap-feed-cards { overflow-y: auto !important; flex-wrap: wrap !important; align-content: flex-start !important; }
           .catmap-navbar { padding: 8px 12px !important; }
           .catmap-navbar-links { display: none !important; }
+          .catmap-met-btn { font-size: 12px !important; padding: 7px 12px !important; }
         }
       `}</style>
 
@@ -312,7 +313,7 @@ export default function Home() {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {gpsError && <span style={{ fontSize: 13, color: '#F44336', maxWidth: 200 }}>{gpsError}</span>}
-          <button onClick={handleMetACat} disabled={gpsLoading} style={{ padding: '9px 18px', borderRadius: 8, border: 'none', background: gpsLoading ? '#ffccbc' : '#FF6B6B', color: 'white', fontWeight: 700, fontSize: 14, cursor: gpsLoading ? 'default' : 'pointer' }}>
+          <button className="catmap-met-btn" onClick={handleMetACat} disabled={gpsLoading} style={{ padding: '9px 18px', borderRadius: 8, border: 'none', background: gpsLoading ? '#ffccbc' : '#FF6B6B', color: 'white', fontWeight: 700, fontSize: 14, cursor: gpsLoading ? 'default' : 'pointer' }}>
             {gpsLoading ? '📍 Getting location...' : '🐱 I met a cat!'}
           </button>
           {user ? (
