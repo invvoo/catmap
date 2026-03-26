@@ -58,14 +58,18 @@ export default function CatPage() {
 
   // Sighting modal
   const [showSightingModal, setShowSightingModal] = useState(false);
+  const [sightingStep, setSightingStep] = useState<1 | 2>(1);
   const [note, setNote] = useState('');
-  const [gpsLoading, setGpsLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [sightingSuccess, setSightingSuccess] = useState(false);
-  const [gpsError, setGpsError] = useState('');
   const [sightingPhoto, setSightingPhoto] = useState<File | null>(null);
   const [sightingPhotoPreview, setSightingPhotoPreview] = useState<string | null>(null);
-  const sightingPhotoRef = useRef<HTMLInputElement>(null);
+  const [sightingLat, setSightingLat] = useState<number | null>(null);
+  const [sightingLng, setSightingLng] = useState<number | null>(null);
+  const [sightingLocSource, setSightingLocSource] = useState('');
+  const [sightingLocLoading, setSightingLocLoading] = useState(false);
+  const sightingCameraRef = useRef<HTMLInputElement>(null);
+  const sightingGalleryRef = useRef<HTMLInputElement>(null);
   const miniMapRef = useRef<HTMLDivElement>(null);
   const miniMapInstanceRef = useRef<any>(null);
 
@@ -278,45 +282,125 @@ export default function CatPage() {
     setNewNameInput(''); await handleVote(trimmed);
   }
 
-  async function handleSubmitSighting() {
-    setGpsLoading(true); setGpsError('');
+  async function getExifLocation(file: File): Promise<{ lat: number; lng: number } | null> {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const view = new DataView(e.target?.result as ArrayBuffer);
+        if (view.getUint16(0, false) !== 0xFFD8) return resolve(null);
+        let offset = 2;
+        while (offset < view.byteLength) {
+          const marker = view.getUint16(offset, false); offset += 2;
+          if (marker === 0xFFE1) {
+            if (view.getUint32(offset + 2, false) !== 0x45786966) return resolve(null);
+            const tiffOffset = offset + 2 + 6;
+            const le = view.getUint16(tiffOffset, false) === 0x4949;
+            const ifdOffset = view.getUint32(tiffOffset + 4, le) + tiffOffset;
+            const entries = view.getUint16(ifdOffset, le);
+            let gpsOff = null;
+            for (let i = 0; i < entries; i++) {
+              if (view.getUint16(ifdOffset + 2 + i * 12, le) === 0x8825)
+                gpsOff = view.getUint32(ifdOffset + 2 + i * 12 + 8, le) + tiffOffset;
+            }
+            if (!gpsOff) return resolve(null);
+            const gpsEntries = view.getUint16(gpsOff, le);
+            let latRef = '', latVal = null, lngRef = '', lngVal = null;
+            for (let i = 0; i < gpsEntries; i++) {
+              const tag = view.getUint16(gpsOff + 2 + i * 12, le);
+              const vo = gpsOff + 2 + i * 12 + 8;
+              if (tag === 1) latRef = String.fromCharCode(view.getUint8(vo));
+              if (tag === 3) lngRef = String.fromCharCode(view.getUint8(vo));
+              if (tag === 2 || tag === 4) {
+                const dmsOff = view.getUint32(vo, le) + tiffOffset;
+                const d = view.getUint32(dmsOff, le) / view.getUint32(dmsOff + 4, le);
+                const m = view.getUint32(dmsOff + 8, le) / view.getUint32(dmsOff + 12, le);
+                const s = view.getUint32(dmsOff + 16, le) / view.getUint32(dmsOff + 20, le);
+                const dec = d + m / 60 + s / 3600;
+                if (tag === 2) latVal = dec; if (tag === 4) lngVal = dec;
+              }
+            }
+            if (latVal !== null && lngVal !== null && isFinite(latVal) && isFinite(lngVal))
+              return resolve({ lat: latRef === 'S' ? -latVal : latVal, lng: lngRef === 'W' ? -lngVal : lngVal });
+            return resolve(null);
+          }
+          if ((marker & 0xFF00) !== 0xFF00) break;
+          offset += view.getUint16(offset, false);
+        }
+        resolve(null);
+      };
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  function openSightingModal() {
+    if (!user) { window.location.href = '/login'; return; }
+    setNote(''); setSightingSuccess(false); setSightingPhoto(null);
+    setSightingPhotoPreview(null); setSightingLat(null); setSightingLng(null);
+    setSightingLocSource(''); setSightingStep(1); setShowSightingModal(true);
+  }
+
+  async function handlePickCamera(file: File) {
+    setSightingPhoto(file);
+    setSightingPhotoPreview(URL.createObjectURL(file));
+    setSightingLocLoading(true);
     navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        setGpsLoading(false); setSaving(true);
-        let photoUrl: string | null = null;
-        if (sightingPhoto) {
-          const filename = `${Date.now()}_sighting_${catId}_${sightingPhoto.name}`;
-          const { error: upErr } = await supabase.storage.from('cat-photos').upload(filename, sightingPhoto);
-          if (!upErr) {
-            const { data } = supabase.storage.from('cat-photos').getPublicUrl(filename);
-            photoUrl = data.publicUrl;
-          }
-        }
-        const { error } = await supabase.from('sightings').insert({
-          cat_id: catId, user_id: user.id,
-          lat: position.coords.latitude, lng: position.coords.longitude,
-          note: note.trim() || null,
-          photo_url: photoUrl,
-        });
-        setSaving(false);
-        if (error) { setGpsError('Failed: ' + error.message); }
-        else {
-          setSightingSuccess(true);
-          setSightingPhoto(null); setSightingPhotoPreview(null);
-          // Notify cat owner
-          if (cat.owner_id && cat.owner_id !== user.id) {
-            await supabase.from('notifications').insert({
-              user_id: cat.owner_id, cat_id: catId, type: 'sighting',
-              message: `📍 Someone spotted ${cat.name}!`,
-            });
-          }
-          await loadSightings(); await loadGallery();
-          setTimeout(() => { setShowSightingModal(false); setSightingSuccess(false); }, 2000);
-        }
+      (pos) => {
+        setSightingLat(pos.coords.latitude); setSightingLng(pos.coords.longitude);
+        setSightingLocSource('📍 GPS from device'); setSightingLocLoading(false); setSightingStep(2);
       },
-      () => { setGpsLoading(false); setGpsError('Could not get location.'); },
+      () => { setSightingLocSource('⚠️ Location unavailable'); setSightingLocLoading(false); setSightingStep(2); },
       { enableHighAccuracy: true, timeout: 10000 }
     );
+  }
+
+  async function handlePickGallery(file: File) {
+    setSightingPhoto(file);
+    setSightingPhotoPreview(URL.createObjectURL(file));
+    setSightingLocLoading(true);
+    const exif = await getExifLocation(file);
+    if (exif) {
+      setSightingLat(exif.lat); setSightingLng(exif.lng);
+      setSightingLocSource('✅ GPS from photo'); setSightingLocLoading(false); setSightingStep(2);
+    } else {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setSightingLat(pos.coords.latitude); setSightingLng(pos.coords.longitude);
+          setSightingLocSource('📍 GPS from device'); setSightingLocLoading(false); setSightingStep(2);
+        },
+        () => { setSightingLocSource('⚠️ Location unavailable'); setSightingLocLoading(false); setSightingStep(2); },
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    }
+  }
+
+  async function handleSubmitSighting() {
+    if (!sightingPhoto) return;
+    setSaving(true);
+    let photoUrl: string | null = null;
+    const filename = `${Date.now()}_sighting_${catId}_${sightingPhoto.name}`;
+    const { error: upErr } = await supabase.storage.from('cat-photos').upload(filename, sightingPhoto);
+    if (!upErr) {
+      const { data } = supabase.storage.from('cat-photos').getPublicUrl(filename);
+      photoUrl = data.publicUrl;
+    }
+    const { error } = await supabase.from('sightings').insert({
+      cat_id: catId, user_id: user.id,
+      lat: sightingLat, lng: sightingLng,
+      note: note.trim() || null,
+      photo_url: photoUrl,
+    });
+    setSaving(false);
+    if (!error) {
+      setSightingSuccess(true);
+      if (cat.owner_id && cat.owner_id !== user.id) {
+        await supabase.from('notifications').insert({
+          user_id: cat.owner_id, cat_id: catId, type: 'sighting',
+          message: `📍 Someone spotted ${cat.name}!`,
+        });
+      }
+      await loadSightings(); await loadGallery();
+      setTimeout(() => { setShowSightingModal(false); setSightingSuccess(false); }, 2000);
+    }
   }
 
   async function handleMarkLost() {
@@ -750,7 +834,7 @@ export default function CatPage() {
 
           {/* ── ACTIONS ── */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 4 }}>
-            <button onClick={() => { if (!user) { window.location.href = '/login'; return; } setNote(''); setGpsError(''); setSightingSuccess(false); setSightingPhoto(null); setSightingPhotoPreview(null); setShowSightingModal(true); }}
+            <button onClick={openSightingModal}
               style={{ padding: 14, borderRadius: 10, border: 'none', background: '#FF6B6B', color: 'white', fontSize: 15, fontWeight: 600, cursor: 'pointer' }}>
               📍 I saw this cat recently!
             </button>
@@ -825,47 +909,67 @@ export default function CatPage() {
 
       {/* ── SIGHTING MODAL ── */}
       {showSightingModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ background: 'white', borderRadius: 16, padding: 28, width: 340, boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: 'white', borderRadius: '20px 20px 0 0', padding: '28px 24px 36px', width: '100%', maxWidth: 480, boxShadow: '0 -8px 40px rgba(0,0,0,0.2)' }}>
+
             {sightingSuccess ? (
-              <div style={{ textAlign: 'center', padding: '20px 0' }}>
-                <div style={{ fontSize: 48, marginBottom: 12 }}>✅</div>
-                <div style={{ fontSize: 18, fontWeight: 700 }}>Sighting logged!</div>
+              <div style={{ textAlign: 'center', padding: '28px 0' }}>
+                <div style={{ fontSize: 52, marginBottom: 12 }}>✅</div>
+                <div style={{ fontSize: 20, fontWeight: 700 }}>Sighting logged!</div>
+                <div style={{ fontSize: 14, color: '#888', marginTop: 6 }}>Thank you for the update!</div>
               </div>
+
+            ) : sightingStep === 1 ? (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <h2 style={{ margin: 0, fontSize: 20 }}>📍 I saw this cat!</h2>
+                  <button onClick={() => setShowSightingModal(false)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#aaa' }}>✕</button>
+                </div>
+                <p style={{ color: '#888', fontSize: 13, margin: '0 0 24px' }}>A photo is required to log a sighting.</p>
+
+                <button onClick={() => sightingCameraRef.current?.click()}
+                  style={{ width: '100%', padding: 18, borderRadius: 14, border: 'none', background: '#FF6B6B', color: 'white', fontSize: 17, fontWeight: 700, cursor: 'pointer', marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+                  📷 Take a Photo
+                </button>
+                <button onClick={() => sightingGalleryRef.current?.click()}
+                  style={{ width: '100%', padding: 18, borderRadius: 14, border: '2px solid #FF6B6B', background: 'white', color: '#FF6B6B', fontSize: 17, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+                  🖼️ Upload from Gallery
+                </button>
+
+                <input ref={sightingCameraRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }}
+                  onChange={e => { const f = e.target.files?.[0]; if (f) handlePickCamera(f); }} />
+                <input ref={sightingGalleryRef} type="file" accept="image/*" style={{ display: 'none' }}
+                  onChange={e => { const f = e.target.files?.[0]; if (f) handlePickGallery(f); }} />
+
+                {sightingLocLoading && (
+                  <div style={{ textAlign: 'center', marginTop: 16, color: '#888', fontSize: 13 }}>📍 Getting location...</div>
+                )}
+              </>
+
             ) : (
               <>
-                <h2 style={{ margin: '0 0 4px', fontSize: 20 }}>📍 Log a Sighting</h2>
-                <p style={{ color: '#888', fontSize: 13, margin: '0 0 14px' }}>Your GPS location will be saved with this sighting.</p>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                  <button onClick={() => setSightingStep(1)} style={{ background: 'none', border: 'none', fontSize: 14, color: '#FF6B6B', fontWeight: 600, cursor: 'pointer', padding: 0 }}>← Back</button>
+                  <h2 style={{ margin: 0, fontSize: 18 }}>📍 Confirm Sighting</h2>
+                  <button onClick={() => setShowSightingModal(false)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#aaa' }}>✕</button>
+                </div>
 
-                <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 6 }}>📷 Add a photo (optional)</div>
-                {sightingPhotoPreview ? (
-                  <div style={{ position: 'relative', marginBottom: 12 }}>
-                    <img src={sightingPhotoPreview} alt="sighting" style={{ width: '100%', height: 140, objectFit: 'contain', objectPosition: '50% 20%', borderRadius: 8, background: '#111', display: 'block' }} />
-                    <button onClick={() => { setSightingPhoto(null); setSightingPhotoPreview(null); }}
-                      style={{ position: 'absolute', top: 6, right: 6, background: 'rgba(0,0,0,0.5)', border: 'none', borderRadius: '50%', width: 24, height: 24, color: 'white', fontSize: 12, cursor: 'pointer' }}>✕</button>
-                  </div>
-                ) : (
-                  <div onClick={() => sightingPhotoRef.current?.click()}
-                    style={{ border: '2px dashed #ddd', borderRadius: 8, padding: '14px 0', textAlign: 'center', cursor: 'pointer', color: '#aaa', fontSize: 13, marginBottom: 12 }}>
-                    📷 Tap to add photo
-                  </div>
+                {sightingPhotoPreview && (
+                  <img src={sightingPhotoPreview} alt="sighting" style={{ width: '100%', height: 180, objectFit: 'cover', borderRadius: 12, marginBottom: 12, display: 'block' }} />
                 )}
-                <input ref={sightingPhotoRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }}
-                  onChange={e => { const f = e.target.files?.[0]; if (f) { setSightingPhoto(f); setSightingPhotoPreview(URL.createObjectURL(f)); } }} />
+
+                {sightingLocSource && (
+                  <div style={{ fontSize: 12, color: sightingLocSource.startsWith('✅') ? '#4CAF50' : '#FF9800', marginBottom: 10, fontWeight: 600 }}>{sightingLocSource}</div>
+                )}
 
                 <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 6 }}>📝 Note (optional)</div>
                 <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. Looks healthy, near the park bench"
-                  style={{ width: '100%', padding: 10, borderRadius: 8, border: '1px solid #ddd', boxSizing: 'border-box', height: 70, fontSize: 14, resize: 'none', marginBottom: 12, fontFamily: 'inherit' }} />
+                  style={{ width: '100%', padding: 10, borderRadius: 8, border: '1px solid #ddd', boxSizing: 'border-box', height: 70, fontSize: 14, resize: 'none', marginBottom: 14, fontFamily: 'inherit', outline: 'none' }} />
 
-                {gpsError && <p style={{ color: '#F44336', fontSize: 13, marginBottom: 10 }}>{gpsError}</p>}
-                <div style={{ display: 'flex', gap: 10 }}>
-                  <button onClick={() => { setShowSightingModal(false); setSightingPhoto(null); setSightingPhotoPreview(null); }}
-                    style={{ flex: 1, padding: 12, borderRadius: 8, border: '1px solid #ddd', background: 'white', cursor: 'pointer' }}>Cancel</button>
-                  <button onClick={handleSubmitSighting} disabled={gpsLoading || saving}
-                    style={{ flex: 1, padding: 12, borderRadius: 8, border: 'none', background: '#FF6B6B', color: 'white', cursor: 'pointer', fontWeight: 600 }}>
-                    {gpsLoading ? '📍 Getting GPS...' : saving ? 'Saving...' : 'Log Sighting'}
-                  </button>
-                </div>
+                <button onClick={handleSubmitSighting} disabled={saving}
+                  style={{ width: '100%', padding: 14, borderRadius: 12, border: 'none', background: '#FF6B6B', color: 'white', cursor: saving ? 'default' : 'pointer', fontWeight: 700, fontSize: 16, opacity: saving ? 0.7 : 1 }}>
+                  {saving ? 'Saving...' : '📍 Log Sighting'}
+                </button>
               </>
             )}
           </div>
