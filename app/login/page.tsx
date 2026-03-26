@@ -19,13 +19,13 @@ export default function LoginPage() {
   async function handleSubmit() {
     setLoading(true); setError('');
     if (isSignup) {
-      const { error } = await getSupabase().auth.signUp({ email, password });
+      const { error } = await supabase.auth.signUp({ email, password });
       if (error) { setError(error.message); setLoading(false); return; }
       // Auto sign in after signup
-      const { error: signInError } = await getSupabase().auth.signInWithPassword({ email, password });
+      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
       if (signInError) { setError(signInError.message); setLoading(false); return; }
     } else {
-      const { error } = await getSupabase().auth.signInWithPassword({ email, password });
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) { setError(error.message); setLoading(false); return; }
     }
     setLoading(false);
