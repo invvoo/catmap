@@ -205,17 +205,6 @@ export default function AddCatForm({ lat, lng, onClose, onSaved }: AddCatFormPro
   const [sightingLoading, setSightingLoading] = useState(false);
   const [sightingError, setSightingError] = useState('');
 
-  // Crop state
-  const [showCrop, setShowCrop] = useState(false);
-  const [cropSrc, setCropSrc] = useState<string | null>(null);
-  const [cropX, setCropX] = useState(0);
-  const [cropY, setCropY] = useState(0);
-  const [cropW, setCropW] = useState(0);
-  const [cropH, setCropH] = useState(0);
-  const cropRef = useRef({ x: 0, y: 0, w: 0, h: 0 });
-  const dragStartRef = useRef({ x: 0, y: 0 });
-  const [imgNatural, setImgNatural] = useState({ w: 0, h: 0 });
-  const [imgDisplay, setImgDisplay] = useState({ w: 0, h: 0 });
 
   // File input refs for camera vs gallery
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -258,69 +247,9 @@ export default function AddCatForm({ lat, lng, onClose, onSaved }: AddCatFormPro
     const location = await getExifLocation(file);
     if (location) { setExtractedLat(location.lat); setExtractedLng(location.lng); setLocationSource('photo'); }
     else { setLocationSource('map'); }
-    // Open crop UI
-    const url = URL.createObjectURL(file);
-    setCropSrc(url);
-    setShowCrop(true);
     setPhotoFile(file);
-  }
-
-  const draggingRef = useRef(false);
-  const cropContainerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function onMouseUp() { draggingRef.current = false; }
-    window.addEventListener('mouseup', onMouseUp);
-    return () => window.removeEventListener('mouseup', onMouseUp);
-  }, []);
-
-  function handleCropMouseDown(e: React.MouseEvent<HTMLDivElement>) {
-    draggingRef.current = true;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    setCropX(x); setCropY(y); setCropW(0); setCropH(0);
-    cropRef.current = { x, y, w: 0, h: 0 };
-    dragStartRef.current = { x, y };
-  }
-
-  function handleCropMouseMove(e: React.MouseEvent<HTMLDivElement>) {
-    if (!draggingRef.current) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
-    const y = Math.max(0, Math.min(e.clientY - rect.top, rect.height));
-    const nx = Math.min(x, dragStartRef.current.x);
-    const ny = Math.min(y, dragStartRef.current.y);
-    const nw = Math.abs(x - dragStartRef.current.x);
-    const nh = Math.abs(y - dragStartRef.current.y);
-    setCropX(nx); setCropY(ny); setCropW(nw); setCropH(nh);
-    cropRef.current = { x: nx, y: ny, w: nw, h: nh };
-  }
-
-  async function applyCrop() {
-    if (!cropSrc || !photoFile) return;
-    const img = new Image();
-    img.src = cropSrc;
-    await new Promise(r => { img.onload = r; });
-    const scaleX = img.naturalWidth / imgDisplay.w;
-    const scaleY = img.naturalHeight / imgDisplay.h;
-    const canvas = document.createElement('canvas');
-    const { x: rX, y: rY, w: rW, h: rH } = cropRef.current;
-    const cw = rW > 10 ? rW * scaleX : img.naturalWidth;
-    const ch = rH > 10 ? rH * scaleY : img.naturalHeight;
-    const cx = rW > 10 ? rX * scaleX : 0;
-    const cy = rH > 10 ? rY * scaleY : 0;
-    canvas.width = cw; canvas.height = ch;
-    const ctx = canvas.getContext('2d')!;
-    ctx.drawImage(img, cx, cy, cw, ch, 0, 0, cw, ch);
-    canvas.toBlob((blob) => {
-      if (!blob) return;
-      const croppedFile = new File([blob], photoFile.name, { type: 'image/jpeg' });
-      setPhotoFile(croppedFile);
-      setPhotoPreview(URL.createObjectURL(croppedFile));
-      setShowCrop(false);
-      runAnalyse(croppedFile, extractedLat, extractedLng);
-    }, 'image/jpeg', 0.9);
+    setPhotoPreview(URL.createObjectURL(file));
+    runAnalyse(file, location?.lat ?? lat, location?.lng ?? lng);
   }
 
   async function runAnalyse(file: File, useLat: number, useLng: number) {
@@ -595,12 +524,8 @@ export default function AddCatForm({ lat, lng, onClose, onSaved }: AddCatFormPro
 
             {/* Photo preview */}
             {photoPreview && (
-              <div style={{ position: 'relative', marginBottom: 12 }}>
+              <div style={{ marginBottom: 12 }}>
                 <img src={photoPreview} alt="preview" style={{ width: '100%', borderRadius: 8, maxHeight: 180, objectFit: 'cover', display: 'block' }} />
-                <button onClick={() => { setCropSrc(photoPreview); setShowCrop(true); setCropW(0); setCropH(0); }}
-                  style={{ position: 'absolute', bottom: 8, right: 8, background: 'rgba(0,0,0,0.6)', color: 'white', border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 12, cursor: 'pointer' }}>
-                  ✂️ Crop
-                </button>
               </div>
             )}
             {photoFile && (
@@ -711,44 +636,6 @@ export default function AddCatForm({ lat, lng, onClose, onSaved }: AddCatFormPro
         )}
       </div>
 
-      {/* ── CROP MODAL ── */}
-      {showCrop && cropSrc && (
-        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.8)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 3000 }}>
-          <div style={{ background: 'white', borderRadius: 16, padding: 20, width: 460, maxWidth: '95vw' }}>
-            <h2 style={{ margin: '0 0 8px', fontSize: 18 }}>✂️ Crop Photo</h2>
-            <p style={{ fontSize: 13, color: '#888', margin: '0 0 12px' }}>Drag to select the area to keep. Leave empty to use full photo.</p>
-            <div
-              ref={cropContainerRef}
-              style={{ position: 'relative', userSelect: 'none', cursor: 'crosshair', lineHeight: 0 }}
-              onMouseDown={handleCropMouseDown}
-              onMouseMove={handleCropMouseMove}
-            >
-              <img
-                src={cropSrc} alt="crop"
-                style={{ width: '100%', borderRadius: 8, display: 'block' }}
-                onLoad={e => {
-                  const img = e.currentTarget;
-                  setImgNatural({ w: img.naturalWidth, h: img.naturalHeight });
-                  setImgDisplay({ w: img.offsetWidth, h: img.offsetHeight });
-                }}
-              />
-              {cropW > 5 && cropH > 5 && (
-                <div style={{ position: 'absolute', left: cropX, top: cropY, width: cropW, height: cropH, border: '2px solid #FF6B6B', background: 'rgba(255,107,107,0.15)', pointerEvents: 'none' }} />
-              )}
-            </div>
-            <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
-              <button onClick={() => { setShowCrop(false); setCropW(0); setCropH(0); if (!photoPreview) setPhotoFile(null); }}
-                style={{ flex: 1, padding: 11, borderRadius: 8, border: '1px solid #ddd', background: 'white', cursor: 'pointer', fontSize: 14 }}>
-                Cancel
-              </button>
-              <button onClick={applyCrop}
-                style={{ flex: 1, padding: 11, borderRadius: 8, border: 'none', background: '#FF6B6B', color: 'white', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
-                {cropRef.current.w > 5 && cropRef.current.h > 5 ? 'Apply Crop' : 'Use Full Photo'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── SAVE MATCH MODAL (fallback for submit-time match check) ── */}
       {showSaveMatchModal && (
