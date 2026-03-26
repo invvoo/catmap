@@ -5,6 +5,7 @@
 export const dynamic = 'force-dynamic';
 import { supabase } from '../../../lib/supabase';
 import Navbar from '../../components/Navbar';
+import { BOUNTY_TYPES, calcCurrentAmount, BountyType } from '../../../lib/bountyPolicy';
 
 import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'next/navigation';
@@ -99,6 +100,14 @@ export default function CatPage() {
   // Adopt modal
   const [showAdoptModal, setShowAdoptModal] = useState(false);
 
+  // Bounties
+  const [bounties, setBounties] = useState<any[]>([]);
+  const [showPostBountyModal, setShowPostBountyModal] = useState(false);
+  const [bountyType, setBountyType] = useState<BountyType>('feeding');
+  const [bountyDesc, setBountyDesc] = useState('');
+  const [bountyDifficulty, setBountyDifficulty] = useState('standard');
+  const [bountySaving, setBountySaving] = useState(false);
+
   // Owner notes
   const [ownerNotes, setOwnerNotes] = useState('');
   const [notesSaving, setNotesSaving] = useState(false);
@@ -119,6 +128,7 @@ export default function CatPage() {
     loadNameVotes();
     loadGallery();
     loadPosts();
+    loadBounties();
   }, [catId]);
 
   async function loadCat() {
@@ -152,6 +162,31 @@ export default function CatPage() {
   async function loadMyVote(userId: string) {
     const { data } = await supabase.from('cat_name_votes').select('suggested_name').eq('cat_id', catId).eq('user_id', userId).maybeSingle();
     if (data) setMyVote(data.suggested_name);
+  }
+
+  async function loadBounties() {
+    const { data } = await supabase.from('bounties').select('*').eq('cat_id', catId).in('status', ['open', 'claimed', 'completed']).order('created_at', { ascending: false });
+    setBounties(data || []);
+  }
+
+  async function handlePostBounty() {
+    if (!user) { window.location.href = '/login'; return; }
+    setBountySaving(true);
+    const policy = BOUNTY_TYPES[bountyType];
+    const diffBonus = bountyDifficulty === 'standard' ? policy.baseAmount * 0.20
+      : bountyDifficulty === 'hard' ? policy.baseAmount * 0.50 : 0;
+    await supabase.from('bounties').insert({
+      cat_id: catId, posted_by: user.id, type: bountyType,
+      difficulty: bountyDifficulty, status: 'open',
+      base_amount: policy.baseAmount, current_amount: policy.baseAmount + diffBonus,
+      max_amount: policy.maxAmount, community_boost: 0,
+      difficulty_bonus: diffBonus, escalation_paused: false,
+      description: bountyDesc.trim() || null,
+    });
+    setBountySaving(false);
+    setShowPostBountyModal(false);
+    setBountyDesc('');
+    await loadBounties();
   }
 
   async function loadGallery() {
@@ -832,6 +867,39 @@ export default function CatPage() {
             })}
           </div>
 
+          {/* ── BOUNTIES ── */}
+          <div style={sectionCard}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={sectionLabel}>🐾 Needs Help</span>
+              <button onClick={() => setShowPostBountyModal(true)}
+                style={{ fontSize: 12, fontWeight: 700, color: '#FF6B6B', background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0' }}>
+                + Post Bounty
+              </button>
+            </div>
+            {bounties.length === 0 ? (
+              <div style={{ fontSize: 13, color: '#bbb', paddingBottom: 8 }}>No active bounties for this cat.</div>
+            ) : (
+              bounties.map(b => {
+                const policy = BOUNTY_TYPES[b.type as BountyType];
+                const current = calcCurrentAmount(b.base_amount, b.max_amount, b.type, b.created_at, b.escalation_paused, b.community_boost || 0, b.difficulty_bonus || 0);
+                return (
+                  <a key={b.id} href={`/bounties/${b.id}`} style={{ textDecoration: 'none', display: 'block', background: `${policy.color}08`, border: `1px solid ${policy.color}30`, borderRadius: 10, padding: '10px 12px', marginBottom: 8 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: policy.color }}>{policy.emoji} {policy.label}</span>
+                        {b.description && <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{b.description}</div>}
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: 18, fontWeight: 900, color: policy.color }}>${current.toFixed(2)}</div>
+                        <div style={{ fontSize: 10, color: '#bbb' }}>{b.status === 'claimed' ? '🔒 Claimed' : '🟢 Open'}</div>
+                      </div>
+                    </div>
+                  </a>
+                );
+              })
+            )}
+          </div>
+
           {/* ── ACTIONS ── */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 4 }}>
             <button onClick={openSightingModal}
@@ -1026,6 +1094,58 @@ export default function CatPage() {
                 {claimSaving ? 'Submitting...' : 'Submit Claim'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* ── POST BOUNTY MODAL ── */}
+      {showPostBountyModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: 'white', borderRadius: '20px 20px 0 0', padding: '28px 24px', paddingBottom: 'calc(36px + env(safe-area-inset-bottom))', width: '100%', maxWidth: 480, maxHeight: '90dvh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h2 style={{ margin: 0, fontSize: 20 }}>🐾 Post a Bounty</h2>
+              <button onClick={() => setShowPostBountyModal(false)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#aaa' }}>✕</button>
+            </div>
+            <p style={{ fontSize: 13, color: '#888', margin: '0 0 16px' }}>Flag this cat as needing help. Community members can claim the bounty and get paid for completing the task.</p>
+
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#333', marginBottom: 8 }}>Need Type</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+              {(Object.keys(BOUNTY_TYPES) as BountyType[]).map(t => {
+                const p = BOUNTY_TYPES[t];
+                const selected = bountyType === t;
+                return (
+                  <button key={t} onClick={() => setBountyType(t)}
+                    style={{ padding: '12px 14px', borderRadius: 10, border: `2px solid ${selected ? p.color : '#eee'}`, background: selected ? `${p.color}10` : 'white', textAlign: 'left', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <span style={{ fontWeight: 700, fontSize: 14, color: selected ? p.color : '#333' }}>{p.emoji} {p.label}</span>
+                      <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>{p.description}</div>
+                    </div>
+                    <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: 12 }}>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: selected ? p.color : '#aaa' }}>${p.baseAmount}</div>
+                      <div style={{ fontSize: 10, color: '#bbb' }}>up to ${p.maxAmount}</div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#333', marginBottom: 8 }}>Difficulty</div>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+              {['easy', 'standard', 'hard'].map(d => (
+                <button key={d} onClick={() => setBountyDifficulty(d)}
+                  style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: `2px solid ${bountyDifficulty === d ? '#FF6B6B' : '#eee'}`, background: bountyDifficulty === d ? '#fff0f0' : 'white', color: bountyDifficulty === d ? '#FF6B6B' : '#555', fontWeight: 600, fontSize: 13, cursor: 'pointer', textTransform: 'capitalize' }}>
+                  {d}
+                </button>
+              ))}
+            </div>
+
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#333', marginBottom: 8 }}>Description (optional)</div>
+            <textarea value={bountyDesc} onChange={e => setBountyDesc(e.target.value)} placeholder="Any additional details about what's needed..."
+              style={{ width: '100%', padding: 10, borderRadius: 8, border: '1px solid #ddd', boxSizing: 'border-box', height: 70, fontSize: 13, resize: 'none', outline: 'none', fontFamily: 'inherit', marginBottom: 16 }} />
+
+            <button onClick={handlePostBounty} disabled={bountySaving}
+              style={{ width: '100%', padding: 14, borderRadius: 12, border: 'none', background: BOUNTY_TYPES[bountyType].color, color: 'white', fontWeight: 700, fontSize: 16, cursor: 'pointer', opacity: bountySaving ? 0.7 : 1 }}>
+              {bountySaving ? 'Posting…' : `🐾 Post ${BOUNTY_TYPES[bountyType].label} Bounty ($${BOUNTY_TYPES[bountyType].baseAmount})`}
+            </button>
           </div>
         </div>
       )}
