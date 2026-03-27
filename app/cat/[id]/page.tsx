@@ -5,6 +5,7 @@
 export const dynamic = 'force-dynamic';
 import { supabase } from '../../../lib/supabase';
 import Navbar from '../../components/Navbar';
+import { BOUNTY_TYPES, calcCurrentAmount, BountyType } from '../../../lib/bountyPolicy';
 
 import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'next/navigation';
@@ -89,6 +90,14 @@ export default function CatPage() {
   const [photoUploading, setPhotoUploading] = useState(false);
   const photoInputRef = useRef<HTMLInputElement>(null);
 
+  // Photo likes & comments
+  const [photoLikes, setPhotoLikes] = useState<Record<string, number>>({});
+  const [myLikes, setMyLikes] = useState<Set<string>>(new Set());
+  const [photoComments, setPhotoComments] = useState<Record<string, any[]>>({});
+  const [lightboxComments, setLightboxComments] = useState<any[]>([]);
+  const [newComment, setNewComment] = useState('');
+  const [commentSaving, setCommentSaving] = useState(false);
+
   // Community posts
   const [posts, setPosts] = useState<any[]>([]);
   const [postReactions, setPostReactions] = useState<Record<string, any[]>>({});
@@ -98,6 +107,14 @@ export default function CatPage() {
 
   // Adopt modal
   const [showAdoptModal, setShowAdoptModal] = useState(false);
+
+  // Bounties
+  const [bounties, setBounties] = useState<any[]>([]);
+  const [showPostBountyModal, setShowPostBountyModal] = useState(false);
+  const [bountyType, setBountyType] = useState<BountyType>('feeding');
+  const [bountyDesc, setBountyDesc] = useState('');
+  const [bountyDifficulty, setBountyDifficulty] = useState('standard');
+  const [bountySaving, setBountySaving] = useState(false);
 
   // Owner notes
   const [ownerNotes, setOwnerNotes] = useState('');
@@ -119,6 +136,8 @@ export default function CatPage() {
     loadNameVotes();
     loadGallery();
     loadPosts();
+    loadBounties();
+    loadPhotoSocial();
   }, [catId]);
 
   async function loadCat() {
@@ -152,6 +171,94 @@ export default function CatPage() {
   async function loadMyVote(userId: string) {
     const { data } = await supabase.from('cat_name_votes').select('suggested_name').eq('cat_id', catId).eq('user_id', userId).maybeSingle();
     if (data) setMyVote(data.suggested_name);
+  }
+
+  async function loadPhotoSocial() {
+    const [{ data: likes }, { data: comments }] = await Promise.all([
+      supabase.from('cat_photo_likes').select('photo_url, user_id').eq('cat_id', catId),
+      supabase.from('cat_photo_comments').select('*, profiles(display_name,avatar_url)').eq('cat_id', catId).order('created_at', { ascending: true }),
+    ]);
+    // Tally likes per photo
+    const likeCounts: Record<string, number> = {};
+    const liked = new Set<string>();
+    for (const l of (likes || [])) {
+      likeCounts[l.photo_url] = (likeCounts[l.photo_url] || 0) + 1;
+      if (l.user_id === (await supabase.auth.getUser()).data.user?.id) liked.add(l.photo_url);
+    }
+    setPhotoLikes(likeCounts);
+    setMyLikes(liked);
+    // Group comments per photo
+    const commentMap: Record<string, any[]> = {};
+    for (const c of (comments || [])) {
+      if (!commentMap[c.photo_url]) commentMap[c.photo_url] = [];
+      commentMap[c.photo_url].push(c);
+    }
+    setPhotoComments(commentMap);
+  }
+
+  async function handleToggleLike(photoUrl: string) {
+    if (!user) { window.location.href = '/login'; return; }
+    const liked = myLikes.has(photoUrl);
+    // Optimistic update
+    setMyLikes(prev => { const s = new Set(prev); liked ? s.delete(photoUrl) : s.add(photoUrl); return s; });
+    setPhotoLikes(prev => ({ ...prev, [photoUrl]: Math.max(0, (prev[photoUrl] || 0) + (liked ? -1 : 1)) }));
+    if (liked) {
+      await supabase.from('cat_photo_likes').delete().eq('cat_id', catId).eq('photo_url', photoUrl).eq('user_id', user.id);
+    } else {
+      await supabase.from('cat_photo_likes').insert({ cat_id: catId, photo_url: photoUrl, user_id: user.id });
+      // Check if this photo should become the profile photo
+      const updatedLikes = { ...photoLikes, [photoUrl]: (photoLikes[photoUrl] || 0) + 1 };
+      const topUrl = Object.entries(updatedLikes).sort((a, b) => b[1] - a[1])[0]?.[0];
+      if (topUrl && topUrl !== cat.image_url && updatedLikes[topUrl] > 1) {
+        await supabase.from('cats').update({ image_url: topUrl }).eq('id', catId);
+        setCat((prev: any) => ({ ...prev, image_url: topUrl }));
+      }
+    }
+  }
+
+  async function handleAddComment(photoUrl: string) {
+    if (!user || !newComment.trim()) return;
+    setCommentSaving(true);
+    const { data } = await supabase.from('cat_photo_comments').insert({
+      cat_id: catId, photo_url: photoUrl, user_id: user.id, comment: newComment.trim(),
+    }).select('*, profiles(display_name,avatar_url)').single();
+    if (data) {
+      setLightboxComments(prev => [...prev, data]);
+      setPhotoComments(prev => ({ ...prev, [photoUrl]: [...(prev[photoUrl] || []), data] }));
+    }
+    setNewComment('');
+    setCommentSaving(false);
+  }
+
+  function openLightbox(url: string) {
+    setLightboxSrc(url);
+    setLightboxComments(photoComments[url] || []);
+    setNewComment('');
+  }
+
+  async function loadBounties() {
+    const { data } = await supabase.from('bounties').select('*').eq('cat_id', catId).in('status', ['open', 'claimed', 'completed']).order('created_at', { ascending: false });
+    setBounties(data || []);
+  }
+
+  async function handlePostBounty() {
+    if (!user) { window.location.href = '/login'; return; }
+    setBountySaving(true);
+    const policy = BOUNTY_TYPES[bountyType];
+    const diffBonus = bountyDifficulty === 'standard' ? policy.baseAmount * 0.20
+      : bountyDifficulty === 'hard' ? policy.baseAmount * 0.50 : 0;
+    await supabase.from('bounties').insert({
+      cat_id: catId, posted_by: user.id, type: bountyType,
+      difficulty: bountyDifficulty, status: 'open',
+      base_amount: policy.baseAmount, current_amount: policy.baseAmount + diffBonus,
+      max_amount: policy.maxAmount, community_boost: 0,
+      difficulty_bonus: diffBonus, escalation_paused: false,
+      description: bountyDesc.trim() || null,
+    });
+    setBountySaving(false);
+    setShowPostBountyModal(false);
+    setBountyDesc('');
+    await loadBounties();
   }
 
   async function loadGallery() {
@@ -557,7 +664,7 @@ export default function CatPage() {
       <div style={{ maxWidth: 680, margin: '0 auto', padding: '0 0 80px' }}>
 
         {/* Hero photo */}
-        <div style={{ position: 'relative', height: 300, background: '#111', cursor: cat.image_url ? 'zoom-in' : 'default' }} onClick={() => cat.image_url && setLightboxSrc(cat.image_url)}>
+        <div style={{ position: 'relative', height: 300, background: '#111', cursor: cat.image_url ? 'zoom-in' : 'default' }} onClick={() => cat.image_url && openLightbox(cat.image_url)}>
           {cat.image_url
             ? <img src={cat.image_url} alt={cat.name} style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
             : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 100 }}>🐱</div>
@@ -592,8 +699,18 @@ export default function CatPage() {
             </div>
             <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
               {allPhotos.map((url, i) => (
-                <img key={i} src={url} alt={`photo ${i + 1}`} onClick={() => setLightboxSrc(url)}
-                  style={{ width: 80, height: 80, borderRadius: 8, objectFit: 'cover', flexShrink: 0, cursor: 'zoom-in', border: '1px solid #f0f0f0' }} />
+                <div key={i} style={{ position: 'relative', flexShrink: 0, cursor: 'pointer' }} onClick={() => openLightbox(url)}>
+                  <img src={url} alt={`photo ${i + 1}`}
+                    style={{ width: 80, height: 80, borderRadius: 8, objectFit: 'cover', display: 'block', border: url === cat.image_url ? '2px solid #FF6B6B' : '1px solid #f0f0f0' }} />
+                  {photoLikes[url] > 0 && (
+                    <div style={{ position: 'absolute', bottom: 4, left: 4, background: 'rgba(0,0,0,0.55)', borderRadius: 10, padding: '1px 6px', fontSize: 10, color: 'white', fontWeight: 700 }}>
+                      ❤️ {photoLikes[url]}
+                    </div>
+                  )}
+                  {url === cat.image_url && (
+                    <div style={{ position: 'absolute', top: 4, right: 4, background: '#FF6B6B', borderRadius: 6, padding: '1px 5px', fontSize: 9, color: 'white', fontWeight: 700 }}>★</div>
+                  )}
+                </div>
               ))}
               {allPhotos.length === 0 && <div style={{ fontSize: 13, color: '#ccc', padding: '20px 0' }}>No photos yet</div>}
             </div>
@@ -832,6 +949,39 @@ export default function CatPage() {
             })}
           </div>
 
+          {/* ── BOUNTIES ── */}
+          <div style={sectionCard}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={sectionLabel}>🐾 Needs Help</span>
+              <button onClick={() => setShowPostBountyModal(true)}
+                style={{ fontSize: 12, fontWeight: 700, color: '#FF6B6B', background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0' }}>
+                + Post Bounty
+              </button>
+            </div>
+            {bounties.length === 0 ? (
+              <div style={{ fontSize: 13, color: '#bbb', paddingBottom: 8 }}>No active bounties for this cat.</div>
+            ) : (
+              bounties.map(b => {
+                const policy = BOUNTY_TYPES[b.type as BountyType];
+                const current = calcCurrentAmount(b.base_amount, b.max_amount, b.type, b.created_at, b.escalation_paused, b.community_boost || 0, b.difficulty_bonus || 0);
+                return (
+                  <a key={b.id} href={`/bounties/${b.id}`} style={{ textDecoration: 'none', display: 'block', background: `${policy.color}08`, border: `1px solid ${policy.color}30`, borderRadius: 10, padding: '10px 12px', marginBottom: 8 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: policy.color }}>{policy.emoji} {policy.label}</span>
+                        {b.description && <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{b.description}</div>}
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: 18, fontWeight: 900, color: policy.color }}>${current.toFixed(2)}</div>
+                        <div style={{ fontSize: 10, color: '#bbb' }}>{b.status === 'claimed' ? '🔒 Claimed' : '🟢 Open'}</div>
+                      </div>
+                    </div>
+                  </a>
+                );
+              })
+            )}
+          </div>
+
           {/* ── ACTIONS ── */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 4 }}>
             <button onClick={openSightingModal}
@@ -881,11 +1031,62 @@ export default function CatPage() {
         </div>
       </div>
 
-      {/* ── LIGHTBOX ── */}
+      {/* ── LIGHTBOX WITH LIKES & COMMENTS ── */}
       {lightboxSrc && (
-        <div onClick={() => setLightboxSrc(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, cursor: 'zoom-out' }}>
-          <img src={lightboxSrc} alt="full" style={{ maxWidth: '95vw', maxHeight: '92vh', borderRadius: 8, objectFit: 'contain' }} />
-          <button onClick={() => setLightboxSrc(null)} style={{ position: 'fixed', top: 16, right: 16, background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%', width: 36, height: 36, color: 'white', fontSize: 18, cursor: 'pointer' }}>✕</button>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.95)', zIndex: 2000, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          {/* Close */}
+          <button onClick={() => setLightboxSrc(null)} style={{ position: 'absolute', top: 16, right: 16, background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%', width: 36, height: 36, color: 'white', fontSize: 18, cursor: 'pointer', zIndex: 10 }}>✕</button>
+
+          {/* Image */}
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', minHeight: 0, padding: '48px 16px 8px' }}>
+            <img src={lightboxSrc} alt="full" style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: 8, objectFit: 'contain' }} />
+          </div>
+
+          {/* Like bar */}
+          <div style={{ width: '100%', maxWidth: 480, padding: '10px 20px', display: 'flex', alignItems: 'center', gap: 14 }}>
+            <button onClick={() => handleToggleLike(lightboxSrc)}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, background: myLikes.has(lightboxSrc) ? '#FF6B6B' : 'rgba(255,255,255,0.12)', border: 'none', borderRadius: 20, padding: '8px 16px', color: 'white', fontWeight: 700, fontSize: 15, cursor: 'pointer' }}>
+              {myLikes.has(lightboxSrc) ? '❤️' : '🤍'} {photoLikes[lightboxSrc] || 0}
+            </button>
+            {lightboxSrc === cat.image_url && (
+              <span style={{ fontSize: 12, color: '#FF6B6B', fontWeight: 700 }}>★ Profile photo</span>
+            )}
+            {photoLikes[lightboxSrc] > 0 && lightboxSrc !== cat.image_url && (
+              <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>Most liked photo becomes profile photo</span>
+            )}
+          </div>
+
+          {/* Comments */}
+          <div style={{ width: '100%', maxWidth: 480, background: 'rgba(255,255,255,0.06)', borderRadius: '16px 16px 0 0', padding: '14px 20px', paddingBottom: 'calc(16px + env(safe-area-inset-bottom))', maxHeight: '40vh', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.5)', marginBottom: 10 }}>
+              COMMENTS {lightboxComments.length > 0 ? `(${lightboxComments.length})` : ''}
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto', marginBottom: 10 }}>
+              {lightboxComments.length === 0 && (
+                <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.3)', paddingBottom: 8 }}>No comments yet. Be the first!</div>
+              )}
+              {lightboxComments.map((c: any) => (
+                <div key={c.id} style={{ marginBottom: 10 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: '#FF6B6B' }}>{c.profiles?.display_name || 'Anonymous'} </span>
+                  <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.85)' }}>{c.comment}</span>
+                </div>
+              ))}
+            </div>
+            {user ? (
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input value={newComment} onChange={e => setNewComment(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleAddComment(lightboxSrc)}
+                  placeholder="Add a comment…"
+                  style={{ flex: 1, padding: '9px 12px', borderRadius: 20, border: 'none', background: 'rgba(255,255,255,0.12)', color: 'white', fontSize: 13, outline: 'none' }} />
+                <button onClick={() => handleAddComment(lightboxSrc)} disabled={commentSaving || !newComment.trim()}
+                  style={{ padding: '9px 14px', borderRadius: 20, border: 'none', background: newComment.trim() ? '#FF6B6B' : 'rgba(255,255,255,0.1)', color: 'white', fontWeight: 700, fontSize: 13, cursor: newComment.trim() ? 'pointer' : 'default' }}>
+                  {commentSaving ? '…' : 'Post'}
+                </button>
+              </div>
+            ) : (
+              <a href="/login" style={{ fontSize: 13, color: '#FF6B6B', textDecoration: 'none', fontWeight: 600 }}>Log in to like and comment</a>
+            )}
+          </div>
         </div>
       )}
 
@@ -910,7 +1111,7 @@ export default function CatPage() {
       {/* ── SIGHTING MODAL ── */}
       {showSightingModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ background: 'white', borderRadius: '20px 20px 0 0', padding: '28px 24px 36px', width: '100%', maxWidth: 480, boxShadow: '0 -8px 40px rgba(0,0,0,0.2)' }}>
+          <div style={{ background: 'white', borderRadius: '20px 20px 0 0', padding: '28px 24px', paddingBottom: 'calc(36px + env(safe-area-inset-bottom))', width: '100%', maxWidth: 480, boxShadow: '0 -8px 40px rgba(0,0,0,0.2)' }}>
 
             {sightingSuccess ? (
               <div style={{ textAlign: 'center', padding: '28px 0' }}>
@@ -1026,6 +1227,58 @@ export default function CatPage() {
                 {claimSaving ? 'Submitting...' : 'Submit Claim'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* ── POST BOUNTY MODAL ── */}
+      {showPostBountyModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: 'white', borderRadius: '20px 20px 0 0', padding: '28px 24px', paddingBottom: 'calc(36px + env(safe-area-inset-bottom))', width: '100%', maxWidth: 480, maxHeight: '90dvh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h2 style={{ margin: 0, fontSize: 20 }}>🐾 Post a Bounty</h2>
+              <button onClick={() => setShowPostBountyModal(false)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#aaa' }}>✕</button>
+            </div>
+            <p style={{ fontSize: 13, color: '#888', margin: '0 0 16px' }}>Flag this cat as needing help. Community members can claim the bounty and get paid for completing the task.</p>
+
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#333', marginBottom: 8 }}>Need Type</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+              {(Object.keys(BOUNTY_TYPES) as BountyType[]).map(t => {
+                const p = BOUNTY_TYPES[t];
+                const selected = bountyType === t;
+                return (
+                  <button key={t} onClick={() => setBountyType(t)}
+                    style={{ padding: '12px 14px', borderRadius: 10, border: `2px solid ${selected ? p.color : '#eee'}`, background: selected ? `${p.color}10` : 'white', textAlign: 'left', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <span style={{ fontWeight: 700, fontSize: 14, color: selected ? p.color : '#333' }}>{p.emoji} {p.label}</span>
+                      <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>{p.description}</div>
+                    </div>
+                    <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: 12 }}>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: selected ? p.color : '#aaa' }}>${p.baseAmount}</div>
+                      <div style={{ fontSize: 10, color: '#bbb' }}>up to ${p.maxAmount}</div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#333', marginBottom: 8 }}>Difficulty</div>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+              {['easy', 'standard', 'hard'].map(d => (
+                <button key={d} onClick={() => setBountyDifficulty(d)}
+                  style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: `2px solid ${bountyDifficulty === d ? '#FF6B6B' : '#eee'}`, background: bountyDifficulty === d ? '#fff0f0' : 'white', color: bountyDifficulty === d ? '#FF6B6B' : '#555', fontWeight: 600, fontSize: 13, cursor: 'pointer', textTransform: 'capitalize' }}>
+                  {d}
+                </button>
+              ))}
+            </div>
+
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#333', marginBottom: 8 }}>Description (optional)</div>
+            <textarea value={bountyDesc} onChange={e => setBountyDesc(e.target.value)} placeholder="Any additional details about what's needed..."
+              style={{ width: '100%', padding: 10, borderRadius: 8, border: '1px solid #ddd', boxSizing: 'border-box', height: 70, fontSize: 13, resize: 'none', outline: 'none', fontFamily: 'inherit', marginBottom: 16 }} />
+
+            <button onClick={handlePostBounty} disabled={bountySaving}
+              style={{ width: '100%', padding: 14, borderRadius: 12, border: 'none', background: BOUNTY_TYPES[bountyType].color, color: 'white', fontWeight: 700, fontSize: 16, cursor: 'pointer', opacity: bountySaving ? 0.7 : 1 }}>
+              {bountySaving ? 'Posting…' : `🐾 Post ${BOUNTY_TYPES[bountyType].label} Bounty ($${BOUNTY_TYPES[bountyType].baseAmount})`}
+            </button>
           </div>
         </div>
       )}

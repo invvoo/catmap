@@ -440,8 +440,8 @@ export default function AddCatForm({ lat, lng, onClose, onSaved }: AddCatFormPro
   }
 
   return (
-    <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-      <div style={{ background: 'white', borderRadius: 16, padding: 28, width: 400, maxWidth: '95vw', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', maxHeight: '90vh', overflowY: 'auto' }}>
+    <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100dvh', background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+      <div style={{ background: 'white', borderRadius: 16, padding: 28, paddingBottom: 'calc(28px + env(safe-area-inset-bottom))', width: 400, maxWidth: '95vw', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', maxHeight: '90dvh', overflowY: 'auto' }}>
 
         {/* ── STEP 1: PHOTO PICKER ── */}
         {step === 'photo' && (
@@ -672,8 +672,8 @@ export default function AddCatForm({ lat, lng, onClose, onSaved }: AddCatFormPro
 
       {/* ── SAVE MATCH MODAL (fallback for submit-time match check) ── */}
       {showSaveMatchModal && (
-        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>
-          <div style={{ background: 'white', borderRadius: 16, padding: 28, width: 420, maxWidth: '95vw', boxShadow: '0 20px 60px rgba(0,0,0,0.4)', maxHeight: '85vh', overflowY: 'auto' }}>
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100dvh', background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>
+          <div style={{ background: 'white', borderRadius: 16, padding: 28, paddingBottom: 'calc(28px + env(safe-area-inset-bottom))', width: 420, maxWidth: '95vw', boxShadow: '0 20px 60px rgba(0,0,0,0.4)', maxHeight: '85dvh', overflowY: 'auto' }}>
             {lostMatches.length > 0 && (
               <div style={{ background: '#FFF3F3', border: '2px solid #F44336', borderRadius: 12, padding: 14, marginBottom: 20 }}>
                 <div style={{ fontSize: 14, fontWeight: 800, color: '#F44336', marginBottom: 6 }}>🚨 {lostMatches.length} LOST CAT{lostMatches.length > 1 ? 'S' : ''} NEARBY</div>

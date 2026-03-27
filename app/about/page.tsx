@@ -39,53 +39,8 @@ export default function AboutPage() {
           color: #2a2018;
         }
 
-        .nav {
-          position: fixed;
-          top: 0; left: 0; right: 0;
-          z-index: 100;
-          padding: 18px 40px;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          background: rgba(250, 247, 242, 0.92);
-          backdrop-filter: blur(8px);
-          border-bottom: 1px solid rgba(42, 32, 24, 0.08);
-        }
-
-        .nav-logo {
-          font-family: 'Lora', serif;
-          font-size: 20px;
-          font-weight: 600;
-          color: #2a2018;
-          text-decoration: none;
-          letter-spacing: -0.3px;
-        }
-
-        .nav-links {
-          display: flex;
-          gap: 32px;
-          align-items: center;
-        }
-
-        .nav-link {
-          font-size: 14px;
-          font-weight: 400;
-          color: #7a6a5a;
-          text-decoration: none;
-          letter-spacing: 0.3px;
-          transition: color 0.2s;
-        }
-
-        .nav-link:hover, .nav-link.active {
-          color: #2a2018;
-        }
-
-        .nav-link.active {
-          font-weight: 500;
-        }
-
         .hero {
-          padding: 160px 40px 80px;
+          padding: 72px 40px 80px;
           max-width: 780px;
           margin: 0 auto;
         }
@@ -217,8 +172,7 @@ export default function AboutPage() {
         }
 
         @media (max-width: 600px) {
-          .nav { padding: 16px 20px; }
-          .hero { padding: 120px 20px 60px; }
+          .hero { padding: 48px 20px 60px; }
           .content { padding: 0 20px 80px; }
           .footer-cta { padding: 36px 24px; }
           .pull-quote { padding-left: 20px; }

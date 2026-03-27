@@ -44,29 +44,9 @@ export default function CarePage() {
           color: #1e1810;
         }
 
-        /* ── NAV ── */
-        .nav {
-          position: fixed; top: 0; left: 0; right: 0; z-index: 200;
-          padding: 16px 40px;
-          display: flex; align-items: center; justify-content: space-between;
-          background: rgba(245, 240, 235, 0.94);
-          backdrop-filter: blur(10px);
-          border-bottom: 1px solid rgba(30,24,16,0.08);
-        }
-        .nav-logo {
-          font-family: 'Fraunces', serif; font-size: 19px; font-weight: 600;
-          color: #1e1810; text-decoration: none;
-        }
-        .nav-links { display: flex; gap: 28px; align-items: center; }
-        .nav-link {
-          font-size: 13px; font-weight: 400; color: #8a7a68;
-          text-decoration: none; letter-spacing: 0.3px; transition: color 0.2s;
-        }
-        .nav-link:hover, .nav-link.active { color: #1e1810; font-weight: 500; }
-
         /* ── HERO ── */
         .hero {
-          padding: 140px 40px 72px;
+          padding: 72px 40px 72px;
           max-width: 860px; margin: 0 auto;
           display: grid; grid-template-columns: 1fr 1fr; gap: 60px; align-items: end;
         }
@@ -206,7 +186,7 @@ export default function CarePage() {
         }
 
         @media (max-width: 720px) {
-          .hero { grid-template-columns: 1fr; padding: 120px 20px 48px; gap: 36px; }
+          .hero { grid-template-columns: 1fr; padding: 48px 20px 48px; gap: 36px; }
           .hero-right { display: none; }
           .page-body { grid-template-columns: 1fr; padding: 0 20px 80px; }
           .toc { display: none; }
