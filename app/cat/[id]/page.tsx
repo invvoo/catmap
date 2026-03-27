@@ -44,6 +44,34 @@ function AttrRow({ label, value }: { label: string; value?: string | null }) {
   );
 }
 
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function fuzzyMatch(a?: string | null, b?: string | null): boolean {
+  if (!a || !b || a === 'Unknown' || b === 'Unknown') return false;
+  return b.toLowerCase().includes(a.toLowerCase()) || a.toLowerCase().includes(b.toLowerCase());
+}
+function exactMatch(a?: string | null, b?: string | null): boolean {
+  if (!a || !b || a === 'Unknown' || b === 'Unknown') return false;
+  return a.toLowerCase() === b.toLowerCase();
+}
+function scoreAttrs(a: any, b: any): { score: number; fields: string[] } {
+  const fields: string[] = [];
+  let score = 0;
+  if (fuzzyMatch(a?.coat, b?.coat)) { score += 3; fields.push('Coat'); }
+  if (fuzzyMatch(a?.eyes, b?.eyes)) { score += 2; fields.push('Eyes'); }
+  if (exactMatch(a?.gender, b?.gender)) { score += 2; fields.push('Gender'); }
+  if (fuzzyMatch(a?.tail, b?.tail)) { score += 1; fields.push('Tail'); }
+  if (exactMatch(a?.age, b?.age)) { score += 1; fields.push('Age'); }
+  if (exactMatch(a?.tnr, b?.tnr)) { score += 1; fields.push('TNR'); }
+  return { score, fields };
+}
+
 export default function CatPage() {
   const params = useParams();
   const catId = params?.id as string;
@@ -108,6 +136,11 @@ export default function CatPage() {
   // Adopt modal
   const [showAdoptModal, setShowAdoptModal] = useState(false);
 
+  // Lost cat matches
+  const [lostMatches, setLostMatches] = useState<any[]>([]);
+  const [matchesLoading, setMatchesLoading] = useState(false);
+  const [showAllMatches, setShowAllMatches] = useState(false);
+
   // Bounties
   const [bounties, setBounties] = useState<any[]>([]);
   const [showPostBountyModal, setShowPostBountyModal] = useState(false);
@@ -138,6 +171,7 @@ export default function CatPage() {
     loadPosts();
     loadBounties();
     loadPhotoSocial();
+    loadLostMatches();
   }, [catId]);
 
   async function loadCat() {
@@ -234,6 +268,29 @@ export default function CatPage() {
     setLightboxSrc(url);
     setLightboxComments(photoComments[url] || []);
     setNewComment('');
+  }
+
+  async function loadLostMatches() {
+    // Only run matching for lost cats
+    const { data: thisCat } = await supabase.from('cats').select('*').eq('id', catId).single();
+    if (!thisCat || thisCat.status !== 'lost') return;
+    setMatchesLoading(true);
+    // Load all other non-lost cats with location
+    const { data: candidates } = await supabase.from('cats')
+      .select('*').neq('id', catId).not('lat', 'is', null).not('lng', 'is', null);
+    if (!candidates) { setMatchesLoading(false); return; }
+    const srcAttrs = thisCat.attributes || {};
+    const scored = candidates.map((c: any) => {
+      const { score, fields } = scoreAttrs(srcAttrs, c.attributes || {});
+      const distKm = (thisCat.lat && thisCat.lng && c.lat && c.lng)
+        ? haversineKm(thisCat.lat, thisCat.lng, c.lat, c.lng) : 9999;
+      const label = score >= 7 ? 'Strong match' : score >= 4 ? 'Possible match' : score >= 2 ? 'Weak match' : '';
+      return { ...c, _score: score, _fields: fields, _distKm: distKm, _label: label };
+    })
+      .filter((c: any) => c._score >= 2) // only show at least weak matches
+      .sort((a: any, b: any) => b._score !== a._score ? b._score - a._score : a._distKm - b._distKm);
+    setLostMatches(scored);
+    setMatchesLoading(false);
   }
 
   async function loadBounties() {
@@ -948,6 +1005,56 @@ export default function CatPage() {
               );
             })}
           </div>
+
+          {/* ── LOST CAT MATCHES ── */}
+          {isLost && (
+            <div style={sectionCard}>
+              <span style={sectionLabel}>🔍 Possible Matches</span>
+              {matchesLoading ? (
+                <div style={{ fontSize: 13, color: '#bbb', paddingBottom: 10 }}>Scanning database…</div>
+              ) : lostMatches.length === 0 ? (
+                <div style={{ fontSize: 13, color: '#bbb', paddingBottom: 10 }}>No similar cats found nearby yet. Check back as more cats are added.</div>
+              ) : (
+                <>
+                  <div style={{ fontSize: 12, color: '#aaa', marginBottom: 10 }}>
+                    {lostMatches.length} cat{lostMatches.length !== 1 ? 's' : ''} found with similar features, sorted by match strength then distance.
+                  </div>
+                  {(showAllMatches ? lostMatches : lostMatches.slice(0, 5)).map((m: any) => (
+                    <a key={m.id} href={`/cat/${m.id}`} style={{ textDecoration: 'none', display: 'flex', gap: 12, alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #f5f5f5' }}>
+                      {m.image_url
+                        ? <img src={m.image_url} style={{ width: 56, height: 56, borderRadius: 8, objectFit: 'cover', flexShrink: 0, border: '1px solid #f0f0f0' }} />
+                        : <div style={{ width: 56, height: 56, borderRadius: 8, background: '#f5f5f5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, flexShrink: 0 }}>🐱</div>
+                      }
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                          <span style={{ fontWeight: 700, fontSize: 14, color: '#222' }}>{m.name || 'Unknown'}</span>
+                          {m._label && (
+                            <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 6, background: m._label === 'Strong match' ? '#E8F5E9' : m._label === 'Possible match' ? '#FFF8E1' : '#f5f5f5', color: m._label === 'Strong match' ? '#2E7D32' : m._label === 'Possible match' ? '#F57F17' : '#888' }}>
+                              {m._label}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: 11, color: '#aaa', marginBottom: 3 }}>
+                          {m._distKm < 9999 ? `${m._distKm < 1 ? (m._distKm * 1000).toFixed(0) + 'm' : m._distKm.toFixed(1) + 'km'} away` : 'Distance unknown'}
+                          {' · '}{m.status}
+                        </div>
+                        {m._fields.length > 0 && (
+                          <div style={{ fontSize: 11, color: '#FF6B6B' }}>Matches: {m._fields.join(', ')}</div>
+                        )}
+                      </div>
+                      <span style={{ fontSize: 18, color: '#ddd', flexShrink: 0 }}>›</span>
+                    </a>
+                  ))}
+                  {lostMatches.length > 5 && (
+                    <button onClick={() => setShowAllMatches(v => !v)}
+                      style={{ width: '100%', padding: '10px 0', marginTop: 6, borderRadius: 8, border: '1px solid #eee', background: 'white', fontSize: 13, fontWeight: 600, color: '#FF6B6B', cursor: 'pointer' }}>
+                      {showAllMatches ? '▲ Show less' : `▼ Show all ${lostMatches.length} matches`}
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          )}
 
           {/* ── BOUNTIES ── */}
           <div style={sectionCard}>
