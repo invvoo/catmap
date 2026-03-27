@@ -84,8 +84,15 @@ export default function ProfilePage() {
     ]);
     setCats(catsRes.data || []);
     const sightingData = sightingsRes.data || [];
-    setSightings(sightingData);
     setSightingCount(sightingData.length);
+    // Keep only the latest sighting per cat for the map
+    const latestByCat = Object.values(
+      sightingData.reduce((acc, s) => {
+        if (!acc[s.cat_id] || s.created_at > acc[s.cat_id].created_at) acc[s.cat_id] = s;
+        return acc;
+      }, {} as Record<string, any>)
+    );
+    setSightings(latestByCat);
     setPostCount(postsRes.count || 0);
   }
 
