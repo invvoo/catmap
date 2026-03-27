@@ -746,7 +746,7 @@ export default function CatPage() {
   const a = cat.attributes || {};
   const hasAttributes = Object.values(a).some((v: any) => v && v !== 'Unknown');
   const isLost = cat.status === 'lost';
-  const isStray = cat.status === 'stray' || cat.status === 'community';
+  const isStray = cat.status === 'stray' || cat.status === 'community' || !cat.name || cat.name === 'Unknown';
   const isOwner = user?.id === cat.owner_id;
   const color = statusColors[cat.status] || '#888';
   const leadingName = nameVotes[0]?.suggested_name || null;
