@@ -97,33 +97,28 @@ export default function ProfilePage() {
     if (!error && data) { setProfile(data); setEditing(false); }
   }
 
-  const initMap = useCallback(async () => {
+  const initMap = useCallback(() => {
     if (!mapRef.current || sightings.length === 0) return;
-    if (typeof window === 'undefined' || !window.google) return;
-    const { Map, InfoWindow } = await window.google.maps.importLibrary('maps');
-    const { AdvancedMarkerElement } = await window.google.maps.importLibrary('marker');
-    const center = { lat: sightings[0].lat, lng: sightings[0].lng };
-    const map = new Map(mapRef.current, {
-      center, zoom: 13, mapId: process.env.NEXT_PUBLIC_GOOGLE_MAPS_ID,
-      disableDefaultUI: false, zoomControl: true, mapTypeControl: false, streetViewControl: false,
+    if (typeof window === 'undefined' || !window.google?.maps) return;
+    const map = new window.google.maps.Map(mapRef.current, {
+      center: { lat: sightings[0].lat, lng: sightings[0].lng },
+      zoom: 13,
+      mapId: process.env.NEXT_PUBLIC_GOOGLE_MAPS_ID,
+      zoomControl: true, mapTypeControl: false, streetViewControl: false,
     });
     mapInstanceRef.current = map;
-    const infoWindow = new InfoWindow();
+    const infoWindow = new window.google.maps.InfoWindow();
     const bounds = new window.google.maps.LatLngBounds();
     sightings.forEach(s => {
       bounds.extend({ lat: s.lat, lng: s.lng });
       const pin = document.createElement('div');
       pin.style.cssText = 'width:32px;height:32px;border-radius:50%;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);overflow:hidden;cursor:pointer;background:#FF6B6B;display:flex;align-items:center;justify-content:center;';
-      if (s.cats?.image_url) {
-        pin.innerHTML = `<img src="${s.cats.image_url}" style="width:100%;height:100%;object-fit:cover;" />`;
-      } else {
-        pin.innerHTML = '<span style="font-size:16px;">🐱</span>';
-      }
-      const marker = new AdvancedMarkerElement({ map, position: { lat: s.lat, lng: s.lng }, content: pin });
+      pin.innerHTML = s.cats?.image_url
+        ? `<img src="${s.cats.image_url}" style="width:100%;height:100%;object-fit:cover;" />`
+        : '<span style="font-size:16px;">🐱</span>';
+      const marker = new window.google.maps.marker.AdvancedMarkerElement({ map, position: { lat: s.lat, lng: s.lng }, content: pin });
       marker.addListener('click', () => {
-        const catName = s.cats?.name || 'Unknown cat';
-        const catId = s.cats?.id;
-        infoWindow.setContent(`<div style="font-size:13px;font-weight:600;padding:4px 2px"><a href="/cat/${catId}" style="color:#FF6B6B;text-decoration:none">🐱 ${catName}</a><br/><span style="font-size:11px;color:#aaa;font-weight:400">${new Date(s.created_at).toLocaleDateString()}</span></div>`);
+        infoWindow.setContent(`<div style="font-size:13px;font-weight:600;padding:4px 2px"><a href="/cat/${s.cats?.id}" style="color:#FF6B6B;text-decoration:none">🐱 ${s.cats?.name || 'Unknown cat'}</a><br/><span style="font-size:11px;color:#aaa;font-weight:400">${new Date(s.created_at).toLocaleDateString()}</span></div>`);
         infoWindow.open(map, marker);
       });
     });
@@ -132,16 +127,18 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (sightings.length === 0) return;
+    const load = () => { if (window.google?.maps) initMap(); };
     if (window.google?.maps) { initMap(); return; }
     const existing = document.querySelector('script[data-maps]');
     if (!existing) {
       const script = document.createElement('script');
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY}&loading=async`;
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY}&libraries=marker&loading=async&callback=__profileMapInit`;
       script.dataset.maps = '1';
-      script.onload = initMap;
+      window.__profileMapInit = initMap;
       document.head.appendChild(script);
     } else {
-      existing.addEventListener('load', initMap);
+      existing.addEventListener('load', load);
+      return () => existing.removeEventListener('load', load);
     }
   }, [sightings, initMap]);
 
