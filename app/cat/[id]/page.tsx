@@ -606,6 +606,7 @@ export default function CatPage() {
     });
     setSaving(false);
     if (!error) {
+      supabase.rpc('increment_trust_score', { uid: user.id, pts: 1 });
       setSightingSuccess(true);
       if (cat.owner_id && cat.owner_id !== user.id) {
         await supabase.from('notifications').insert({
@@ -694,6 +695,7 @@ export default function CatPage() {
     if (!newPost.trim() || !user) return;
     setPostSaving(true);
     await supabase.from('cat_posts').insert({ cat_id: catId, user_id: user.id, content: newPost.trim() });
+    supabase.rpc('increment_trust_score', { uid: user.id, pts: 3 });
     setNewPost(''); await loadPosts(); setPostSaving(false);
   }
 
