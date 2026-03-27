@@ -90,6 +90,14 @@ export default function CatPage() {
   const [photoUploading, setPhotoUploading] = useState(false);
   const photoInputRef = useRef<HTMLInputElement>(null);
 
+  // Photo likes & comments
+  const [photoLikes, setPhotoLikes] = useState<Record<string, number>>({});
+  const [myLikes, setMyLikes] = useState<Set<string>>(new Set());
+  const [photoComments, setPhotoComments] = useState<Record<string, any[]>>({});
+  const [lightboxComments, setLightboxComments] = useState<any[]>([]);
+  const [newComment, setNewComment] = useState('');
+  const [commentSaving, setCommentSaving] = useState(false);
+
   // Community posts
   const [posts, setPosts] = useState<any[]>([]);
   const [postReactions, setPostReactions] = useState<Record<string, any[]>>({});
@@ -129,6 +137,7 @@ export default function CatPage() {
     loadGallery();
     loadPosts();
     loadBounties();
+    loadPhotoSocial();
   }, [catId]);
 
   async function loadCat() {
@@ -162,6 +171,69 @@ export default function CatPage() {
   async function loadMyVote(userId: string) {
     const { data } = await supabase.from('cat_name_votes').select('suggested_name').eq('cat_id', catId).eq('user_id', userId).maybeSingle();
     if (data) setMyVote(data.suggested_name);
+  }
+
+  async function loadPhotoSocial() {
+    const [{ data: likes }, { data: comments }] = await Promise.all([
+      supabase.from('cat_photo_likes').select('photo_url, user_id').eq('cat_id', catId),
+      supabase.from('cat_photo_comments').select('*, profiles(display_name,avatar_url)').eq('cat_id', catId).order('created_at', { ascending: true }),
+    ]);
+    // Tally likes per photo
+    const likeCounts: Record<string, number> = {};
+    const liked = new Set<string>();
+    for (const l of (likes || [])) {
+      likeCounts[l.photo_url] = (likeCounts[l.photo_url] || 0) + 1;
+      if (l.user_id === (await supabase.auth.getUser()).data.user?.id) liked.add(l.photo_url);
+    }
+    setPhotoLikes(likeCounts);
+    setMyLikes(liked);
+    // Group comments per photo
+    const commentMap: Record<string, any[]> = {};
+    for (const c of (comments || [])) {
+      if (!commentMap[c.photo_url]) commentMap[c.photo_url] = [];
+      commentMap[c.photo_url].push(c);
+    }
+    setPhotoComments(commentMap);
+  }
+
+  async function handleToggleLike(photoUrl: string) {
+    if (!user) { window.location.href = '/login'; return; }
+    const liked = myLikes.has(photoUrl);
+    // Optimistic update
+    setMyLikes(prev => { const s = new Set(prev); liked ? s.delete(photoUrl) : s.add(photoUrl); return s; });
+    setPhotoLikes(prev => ({ ...prev, [photoUrl]: Math.max(0, (prev[photoUrl] || 0) + (liked ? -1 : 1)) }));
+    if (liked) {
+      await supabase.from('cat_photo_likes').delete().eq('cat_id', catId).eq('photo_url', photoUrl).eq('user_id', user.id);
+    } else {
+      await supabase.from('cat_photo_likes').insert({ cat_id: catId, photo_url: photoUrl, user_id: user.id });
+      // Check if this photo should become the profile photo
+      const updatedLikes = { ...photoLikes, [photoUrl]: (photoLikes[photoUrl] || 0) + 1 };
+      const topUrl = Object.entries(updatedLikes).sort((a, b) => b[1] - a[1])[0]?.[0];
+      if (topUrl && topUrl !== cat.image_url && updatedLikes[topUrl] > 1) {
+        await supabase.from('cats').update({ image_url: topUrl }).eq('id', catId);
+        setCat((prev: any) => ({ ...prev, image_url: topUrl }));
+      }
+    }
+  }
+
+  async function handleAddComment(photoUrl: string) {
+    if (!user || !newComment.trim()) return;
+    setCommentSaving(true);
+    const { data } = await supabase.from('cat_photo_comments').insert({
+      cat_id: catId, photo_url: photoUrl, user_id: user.id, comment: newComment.trim(),
+    }).select('*, profiles(display_name,avatar_url)').single();
+    if (data) {
+      setLightboxComments(prev => [...prev, data]);
+      setPhotoComments(prev => ({ ...prev, [photoUrl]: [...(prev[photoUrl] || []), data] }));
+    }
+    setNewComment('');
+    setCommentSaving(false);
+  }
+
+  function openLightbox(url: string) {
+    setLightboxSrc(url);
+    setLightboxComments(photoComments[url] || []);
+    setNewComment('');
   }
 
   async function loadBounties() {
@@ -592,7 +664,7 @@ export default function CatPage() {
       <div style={{ maxWidth: 680, margin: '0 auto', padding: '0 0 80px' }}>
 
         {/* Hero photo */}
-        <div style={{ position: 'relative', height: 300, background: '#111', cursor: cat.image_url ? 'zoom-in' : 'default' }} onClick={() => cat.image_url && setLightboxSrc(cat.image_url)}>
+        <div style={{ position: 'relative', height: 300, background: '#111', cursor: cat.image_url ? 'zoom-in' : 'default' }} onClick={() => cat.image_url && openLightbox(cat.image_url)}>
           {cat.image_url
             ? <img src={cat.image_url} alt={cat.name} style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
             : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 100 }}>🐱</div>
@@ -627,8 +699,18 @@ export default function CatPage() {
             </div>
             <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
               {allPhotos.map((url, i) => (
-                <img key={i} src={url} alt={`photo ${i + 1}`} onClick={() => setLightboxSrc(url)}
-                  style={{ width: 80, height: 80, borderRadius: 8, objectFit: 'cover', flexShrink: 0, cursor: 'zoom-in', border: '1px solid #f0f0f0' }} />
+                <div key={i} style={{ position: 'relative', flexShrink: 0, cursor: 'pointer' }} onClick={() => openLightbox(url)}>
+                  <img src={url} alt={`photo ${i + 1}`}
+                    style={{ width: 80, height: 80, borderRadius: 8, objectFit: 'cover', display: 'block', border: url === cat.image_url ? '2px solid #FF6B6B' : '1px solid #f0f0f0' }} />
+                  {photoLikes[url] > 0 && (
+                    <div style={{ position: 'absolute', bottom: 4, left: 4, background: 'rgba(0,0,0,0.55)', borderRadius: 10, padding: '1px 6px', fontSize: 10, color: 'white', fontWeight: 700 }}>
+                      ❤️ {photoLikes[url]}
+                    </div>
+                  )}
+                  {url === cat.image_url && (
+                    <div style={{ position: 'absolute', top: 4, right: 4, background: '#FF6B6B', borderRadius: 6, padding: '1px 5px', fontSize: 9, color: 'white', fontWeight: 700 }}>★</div>
+                  )}
+                </div>
               ))}
               {allPhotos.length === 0 && <div style={{ fontSize: 13, color: '#ccc', padding: '20px 0' }}>No photos yet</div>}
             </div>
@@ -949,11 +1031,62 @@ export default function CatPage() {
         </div>
       </div>
 
-      {/* ── LIGHTBOX ── */}
+      {/* ── LIGHTBOX WITH LIKES & COMMENTS ── */}
       {lightboxSrc && (
-        <div onClick={() => setLightboxSrc(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, cursor: 'zoom-out' }}>
-          <img src={lightboxSrc} alt="full" style={{ maxWidth: '95vw', maxHeight: '92vh', borderRadius: 8, objectFit: 'contain' }} />
-          <button onClick={() => setLightboxSrc(null)} style={{ position: 'fixed', top: 16, right: 16, background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%', width: 36, height: 36, color: 'white', fontSize: 18, cursor: 'pointer' }}>✕</button>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.95)', zIndex: 2000, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          {/* Close */}
+          <button onClick={() => setLightboxSrc(null)} style={{ position: 'absolute', top: 16, right: 16, background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%', width: 36, height: 36, color: 'white', fontSize: 18, cursor: 'pointer', zIndex: 10 }}>✕</button>
+
+          {/* Image */}
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', minHeight: 0, padding: '48px 16px 8px' }}>
+            <img src={lightboxSrc} alt="full" style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: 8, objectFit: 'contain' }} />
+          </div>
+
+          {/* Like bar */}
+          <div style={{ width: '100%', maxWidth: 480, padding: '10px 20px', display: 'flex', alignItems: 'center', gap: 14 }}>
+            <button onClick={() => handleToggleLike(lightboxSrc)}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, background: myLikes.has(lightboxSrc) ? '#FF6B6B' : 'rgba(255,255,255,0.12)', border: 'none', borderRadius: 20, padding: '8px 16px', color: 'white', fontWeight: 700, fontSize: 15, cursor: 'pointer' }}>
+              {myLikes.has(lightboxSrc) ? '❤️' : '🤍'} {photoLikes[lightboxSrc] || 0}
+            </button>
+            {lightboxSrc === cat.image_url && (
+              <span style={{ fontSize: 12, color: '#FF6B6B', fontWeight: 700 }}>★ Profile photo</span>
+            )}
+            {photoLikes[lightboxSrc] > 0 && lightboxSrc !== cat.image_url && (
+              <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>Most liked photo becomes profile photo</span>
+            )}
+          </div>
+
+          {/* Comments */}
+          <div style={{ width: '100%', maxWidth: 480, background: 'rgba(255,255,255,0.06)', borderRadius: '16px 16px 0 0', padding: '14px 20px', paddingBottom: 'calc(16px + env(safe-area-inset-bottom))', maxHeight: '40vh', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.5)', marginBottom: 10 }}>
+              COMMENTS {lightboxComments.length > 0 ? `(${lightboxComments.length})` : ''}
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto', marginBottom: 10 }}>
+              {lightboxComments.length === 0 && (
+                <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.3)', paddingBottom: 8 }}>No comments yet. Be the first!</div>
+              )}
+              {lightboxComments.map((c: any) => (
+                <div key={c.id} style={{ marginBottom: 10 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: '#FF6B6B' }}>{c.profiles?.display_name || 'Anonymous'} </span>
+                  <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.85)' }}>{c.comment}</span>
+                </div>
+              ))}
+            </div>
+            {user ? (
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input value={newComment} onChange={e => setNewComment(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleAddComment(lightboxSrc)}
+                  placeholder="Add a comment…"
+                  style={{ flex: 1, padding: '9px 12px', borderRadius: 20, border: 'none', background: 'rgba(255,255,255,0.12)', color: 'white', fontSize: 13, outline: 'none' }} />
+                <button onClick={() => handleAddComment(lightboxSrc)} disabled={commentSaving || !newComment.trim()}
+                  style={{ padding: '9px 14px', borderRadius: 20, border: 'none', background: newComment.trim() ? '#FF6B6B' : 'rgba(255,255,255,0.1)', color: 'white', fontWeight: 700, fontSize: 13, cursor: newComment.trim() ? 'pointer' : 'default' }}>
+                  {commentSaving ? '…' : 'Post'}
+                </button>
+              </div>
+            ) : (
+              <a href="/login" style={{ fontSize: 13, color: '#FF6B6B', textDecoration: 'none', fontWeight: 600 }}>Log in to like and comment</a>
+            )}
+          </div>
         </div>
       )}
 
