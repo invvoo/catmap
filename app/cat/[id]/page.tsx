@@ -210,7 +210,7 @@ export default function CatPage() {
   async function loadPhotoSocial() {
     const [{ data: likes }, { data: comments }] = await Promise.all([
       supabase.from('cat_photo_likes').select('photo_url, user_id').eq('cat_id', catId),
-      supabase.from('cat_photo_comments').select('*, profiles(display_name,avatar_url)').eq('cat_id', catId).order('created_at', { ascending: true }),
+      supabase.from('cat_photo_comments').select('*').eq('cat_id', catId).order('created_at', { ascending: true }),
     ]);
     // Tally likes per photo
     const likeCounts: Record<string, number> = {};
@@ -221,9 +221,17 @@ export default function CatPage() {
     }
     setPhotoLikes(likeCounts);
     setMyLikes(liked);
+    // Enrich comments with profiles
+    const commentsData = comments || [];
+    if (commentsData.length > 0) {
+      const userIds = [...new Set(commentsData.map(c => c.user_id).filter(Boolean))];
+      const { data: profilesData } = await supabase.from('profiles').select('id,display_name,avatar_url').in('id', userIds);
+      const profileMap = Object.fromEntries((profilesData || []).map(p => [p.id, p]));
+      commentsData.forEach(c => { c.profiles = profileMap[c.user_id] || null; });
+    }
     // Group comments per photo
     const commentMap: Record<string, any[]> = {};
-    for (const c of (comments || [])) {
+    for (const c of commentsData) {
       if (!commentMap[c.photo_url]) commentMap[c.photo_url] = [];
       commentMap[c.photo_url].push(c);
     }
