@@ -100,6 +100,7 @@ export default function Home() {
   const [gpsLoading, setGpsLoading] = useState(false);
   const [gpsError, setGpsError] = useState('');
   const [allCats, setAllCats] = useState([]);
+  const [topVotedNames, setTopVotedNames] = useState<Record<string, string>>({});
   const [userLocation, setUserLocation] = useState(null);
   const [feedCats, setFeedCats] = useState([]);
   const [visibleCount, setVisibleCount] = useState(0);
@@ -179,6 +180,20 @@ export default function Home() {
     const { data: cats, error } = await supabase.from('cats').select('*');
     if (error) { console.error(error); return; }
     setAllCats(cats || []);
+    // Fetch top voted names for cats with no owner
+    const { data: votes } = await supabase.from('name_votes').select('cat_id, suggested_name');
+    if (votes?.length) {
+      const counts: Record<string, Record<string, number>> = {};
+      votes.forEach(({ cat_id, suggested_name }) => {
+        if (!counts[cat_id]) counts[cat_id] = {};
+        counts[cat_id][suggested_name] = (counts[cat_id][suggested_name] || 0) + 1;
+      });
+      const top: Record<string, string> = {};
+      Object.entries(counts).forEach(([catId, names]) => {
+        top[catId] = Object.entries(names).sort((a, b) => b[1] - a[1])[0][0];
+      });
+      setTopVotedNames(top);
+    }
     catsDataRef.current = (cats || []).filter(c => typeof c.lat === 'number' && typeof c.lng === 'number' && !isNaN(c.lat) && !isNaN(c.lng));
     const bounds = mapInstanceRef.current?.getBounds();
     if (bounds) setVisibleCount((cats || []).filter(c => bounds.contains({ lat: c.lat, lng: c.lng })).length);
@@ -205,7 +220,8 @@ export default function Home() {
       return { ...cat, lat: cat.lat + offset * Math.cos(angle), lng: cat.lng + offset * Math.sin(angle) };
     });
     const markers = jittered.map(cat => {
-      const marker = new AdvancedMarkerElement({ position: { lat: cat.lat, lng: cat.lng }, title: cat.name, content: createCatMarkerElement(cat) });
+      const displayTitle = (!cat.name || cat.name === 'Unknown') ? (topVotedNames[cat.id] || 'Unknown') : cat.name;
+      const marker = new AdvancedMarkerElement({ position: { lat: cat.lat, lng: cat.lng }, title: displayTitle, content: createCatMarkerElement(cat) });
       marker._catId = cat.id;
       marker.addListener('gmp-click', () => openPopup(catById[cat.id] || cat));
       return marker;
@@ -405,15 +421,16 @@ export default function Home() {
               const color = statusColors[cat.status] || '#888';
               const dist = userLocation ? distanceFeet(userLocation.lat, userLocation.lng, cat.lat, cat.lng) : null;
               const isLost = cat.status === 'lost';
+              const displayName = (!cat.name || cat.name === 'Unknown') ? (topVotedNames[cat.id] || 'Unknown') : cat.name;
               return (
                 <div key={cat.id} onClick={() => handleFeedCardClick(cat)}
                   style={{ flexShrink: 0, width: 115, height: 160, cursor: 'pointer', background: '#fafafa', borderRadius: 10, overflow: 'hidden', border: isLost ? '2px solid #F44336' : '1px solid #efefef', boxShadow: isLost ? '0 2px 8px rgba(244,67,54,0.12)' : '0 1px 3px rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column' }}>
                   {cat.image_url
-                    ? <img src={cat.image_url} alt={cat.name} style={{ width: '100%', height: 76, objectFit: 'cover', objectPosition: '50% 20%', display: 'block', borderBottom: `2px solid ${color}` }} />
+                    ? <img src={cat.image_url} alt={displayName} style={{ width: '100%', height: 76, objectFit: 'cover', objectPosition: '50% 20%', display: 'block', borderBottom: `2px solid ${color}` }} />
                     : <div style={{ width: '100%', height: 76, background: color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32 }}>🐱</div>
                   }
                   <div style={{ padding: '6px 8px 4px', flex: 1, display: 'flex', flexDirection: 'column', gap: 3 }}>
-                    <div style={{ fontWeight: 700, fontSize: 12, color: '#111', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cat.name}</div>
+                    <div style={{ fontWeight: 700, fontSize: 12, color: '#111', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayName}</div>
                     <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 8, background: color, color: 'white', alignSelf: 'flex-start' }}>{statusEmoji[cat.status]} {cat.status}</span>
                     {dist !== null && <div style={{ fontSize: 10, color: '#bbb', marginTop: 'auto' }}>📍 {distanceMiles(dist)}</div>}
                   </div>

@@ -30,7 +30,7 @@ export default function LostPage() {
       .from('cats')
       .select('*')
       .eq('status', 'lost')
-      .order('updated_at', { ascending: false });
+      .order('created_at', { ascending: false });
     setCats(data || []);
     setLoading(false);
   }

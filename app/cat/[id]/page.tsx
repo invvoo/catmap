@@ -63,12 +63,10 @@ function exactMatch(a?: string | null, b?: string | null): boolean {
 function scoreAttrs(a: any, b: any): { score: number; fields: string[] } {
   const fields: string[] = [];
   let score = 0;
-  if (fuzzyMatch(a?.coat, b?.coat)) { score += 3; fields.push('Coat'); }
-  if (fuzzyMatch(a?.eyes, b?.eyes)) { score += 2; fields.push('Eyes'); }
-  if (exactMatch(a?.gender, b?.gender)) { score += 2; fields.push('Gender'); }
-  if (fuzzyMatch(a?.tail, b?.tail)) { score += 1; fields.push('Tail'); }
-  if (exactMatch(a?.age, b?.age)) { score += 1; fields.push('Age'); }
-  if (exactMatch(a?.tnr, b?.tnr)) { score += 1; fields.push('TNR'); }
+  // Exact coat match only — "black and white" must not match "black"
+  if (exactMatch(a?.coat, b?.coat)) { score += 10; fields.push('Coat & Pattern'); }
+  // Eye color as secondary differentiator
+  if (fuzzyMatch(a?.eyes, b?.eyes)) { score += 4; fields.push('Eyes'); }
   return { score, fields };
 }
 
