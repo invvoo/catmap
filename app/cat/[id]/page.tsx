@@ -405,7 +405,7 @@ export default function CatPage() {
     });
 
     const google = (window as any).google;
-    const { AdvancedMarkerElement } = await google.maps.importLibrary('marker');
+    const AdvancedMarkerElement = google.maps.marker.AdvancedMarkerElement;
     const Map = google.maps.Map;
     const Polyline = google.maps.Polyline;
     const LatLngBounds = google.maps.LatLngBounds;
