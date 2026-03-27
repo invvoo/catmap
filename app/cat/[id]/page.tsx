@@ -746,7 +746,8 @@ export default function CatPage() {
   const a = cat.attributes || {};
   const hasAttributes = Object.values(a).some((v: any) => v && v !== 'Unknown');
   const isLost = cat.status === 'lost';
-  const isStray = cat.status === 'stray' || cat.status === 'community' || !cat.name || cat.name === 'Unknown';
+  const isStray = cat.status === 'stray' || cat.status === 'community';
+  const showNameVote = !cat.owner_id || isStray || !cat.name || cat.name === 'Unknown';
   const isOwner = user?.id === cat.owner_id;
   const color = statusColors[cat.status] || '#888';
   const leadingName = nameVotes[0]?.suggested_name || null;
@@ -910,8 +911,8 @@ export default function CatPage() {
             </div>
           )}
 
-          {/* Name voting — strays only */}
-          {isStray && (
+          {/* Name voting */}
+          {showNameVote && (
             <div style={sectionCard}>
               {isOwner ? (
                 <>
