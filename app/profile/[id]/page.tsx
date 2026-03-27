@@ -3,7 +3,7 @@
 'use client';
 export const dynamic = 'force-dynamic';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { supabase } from '../../../lib/supabase';
 import Navbar from '../../components/Navbar';
@@ -56,6 +56,9 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const avatarInputRef = useRef(null);
   const [avatarUploading, setAvatarUploading] = useState(false);
+  const [sightings, setSightings] = useState([]);
+  const mapRef = useRef(null);
+  const mapInstanceRef = useRef(null);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -76,11 +79,13 @@ export default function ProfilePage() {
   async function loadStats() {
     const [catsRes, sightingsRes, postsRes] = await Promise.all([
       supabase.from('cats').select('*').eq('owner_id', profileId),
-      supabase.from('sightings').select('id', { count: 'exact' }).eq('user_id', profileId),
+      supabase.from('sightings').select('id, lat, lng, photo_url, created_at, cat_id, cats(id, name, image_url)').eq('user_id', profileId).not('lat', 'is', null).not('lng', 'is', null),
       supabase.from('cat_posts').select('id', { count: 'exact' }).eq('user_id', profileId),
     ]);
     setCats(catsRes.data || []);
-    setSightingCount(sightingsRes.count || 0);
+    const sightingData = sightingsRes.data || [];
+    setSightings(sightingData);
+    setSightingCount(sightingData.length);
     setPostCount(postsRes.count || 0);
   }
 
@@ -91,6 +96,54 @@ export default function ProfilePage() {
     setSaving(false);
     if (!error && data) { setProfile(data); setEditing(false); }
   }
+
+  const initMap = useCallback(async () => {
+    if (!mapRef.current || sightings.length === 0) return;
+    if (typeof window === 'undefined' || !window.google) return;
+    const { Map, InfoWindow } = await window.google.maps.importLibrary('maps');
+    const { AdvancedMarkerElement } = await window.google.maps.importLibrary('marker');
+    const center = { lat: sightings[0].lat, lng: sightings[0].lng };
+    const map = new Map(mapRef.current, {
+      center, zoom: 13, mapId: process.env.NEXT_PUBLIC_GOOGLE_MAPS_ID,
+      disableDefaultUI: false, zoomControl: true, mapTypeControl: false, streetViewControl: false,
+    });
+    mapInstanceRef.current = map;
+    const infoWindow = new InfoWindow();
+    const bounds = new window.google.maps.LatLngBounds();
+    sightings.forEach(s => {
+      bounds.extend({ lat: s.lat, lng: s.lng });
+      const pin = document.createElement('div');
+      pin.style.cssText = 'width:32px;height:32px;border-radius:50%;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);overflow:hidden;cursor:pointer;background:#FF6B6B;display:flex;align-items:center;justify-content:center;';
+      if (s.cats?.image_url) {
+        pin.innerHTML = `<img src="${s.cats.image_url}" style="width:100%;height:100%;object-fit:cover;" />`;
+      } else {
+        pin.innerHTML = '<span style="font-size:16px;">🐱</span>';
+      }
+      const marker = new AdvancedMarkerElement({ map, position: { lat: s.lat, lng: s.lng }, content: pin });
+      marker.addListener('click', () => {
+        const catName = s.cats?.name || 'Unknown cat';
+        const catId = s.cats?.id;
+        infoWindow.setContent(`<div style="font-size:13px;font-weight:600;padding:4px 2px"><a href="/cat/${catId}" style="color:#FF6B6B;text-decoration:none">🐱 ${catName}</a><br/><span style="font-size:11px;color:#aaa;font-weight:400">${new Date(s.created_at).toLocaleDateString()}</span></div>`);
+        infoWindow.open(map, marker);
+      });
+    });
+    if (sightings.length > 1) map.fitBounds(bounds);
+  }, [sightings]);
+
+  useEffect(() => {
+    if (sightings.length === 0) return;
+    if (window.google?.maps) { initMap(); return; }
+    const existing = document.querySelector('script[data-maps]');
+    if (!existing) {
+      const script = document.createElement('script');
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY}&loading=async`;
+      script.dataset.maps = '1';
+      script.onload = initMap;
+      document.head.appendChild(script);
+    } else {
+      existing.addEventListener('load', initMap);
+    }
+  }, [sightings, initMap]);
 
   async function handleAvatarUpload(file) {
     setAvatarUploading(true);
@@ -209,6 +262,17 @@ export default function ProfilePage() {
             </div>
           ))}
         </div>
+
+        {/* Sightings map */}
+        {sightings.length > 0 && (
+          <div style={{ background: 'white', borderRadius: 16, overflow: 'hidden', boxShadow: '0 2px 12px rgba(0,0,0,0.07)', marginBottom: 16 }}>
+            <div style={{ padding: '16px 24px 12px', fontSize: 14, fontWeight: 700, color: '#333' }}>
+              📍 {isOwn ? 'Your' : `${displayName}'s`} Sightings Map
+              <span style={{ fontSize: 12, fontWeight: 400, color: '#aaa', marginLeft: 8 }}>{sightings.length} location{sightings.length !== 1 ? 's' : ''}</span>
+            </div>
+            <div ref={mapRef} style={{ width: '100%', height: 320 }} />
+          </div>
+        )}
 
         {/* Their cats */}
         {cats.length > 0 && (
