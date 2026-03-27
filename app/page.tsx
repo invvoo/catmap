@@ -192,7 +192,7 @@ export default function Home() {
     const useCats = cats ?? catsDataRef.current;
     clearMarkers();
     if (!useCats.length) return;
-    const { AdvancedMarkerElement } = await window.google.maps.importLibrary('marker');
+    const AdvancedMarkerElement = window.google.maps.marker.AdvancedMarkerElement;
     const catById = {};
     useCats.forEach(cat => { catById[cat.id] = cat; });
     const posCount = {};
