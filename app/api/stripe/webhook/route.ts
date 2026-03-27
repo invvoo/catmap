@@ -23,17 +23,16 @@ export async function POST(req: NextRequest) {
 
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object as Stripe.Checkout.Session;
-    const { bountyId, userId, amount } = session.metadata || {};
+    const { bountyId, userId, amount, fundId, note } = session.metadata || {};
 
     if (bountyId && amount) {
-      // Record donation
+      // Record bounty donation
       await supabaseAdmin.from('bounty_donations').insert({
         bounty_id: bountyId,
         user_id: userId || null,
         amount: parseFloat(amount),
         stripe_payment_intent_id: session.payment_intent as string,
       });
-
       // Add to community_boost on bounty
       const { data: bounty } = await supabaseAdmin
         .from('bounties').select('community_boost').eq('id', bountyId).single();
@@ -41,6 +40,26 @@ export async function POST(req: NextRequest) {
         await supabaseAdmin.from('bounties').update({
           community_boost: (bounty.community_boost || 0) + parseFloat(amount),
         }).eq('id', bountyId);
+      }
+    }
+
+    if (fundId && amount) {
+      // Record fund contribution
+      await supabaseAdmin.from('fund_contributions').insert({
+        fund_id: fundId,
+        user_id: userId || null,
+        amount: parseFloat(amount),
+        note: note || null,
+        stripe_payment_intent_id: session.payment_intent as string,
+      });
+      // Update fund balance and total_raised
+      const { data: fund } = await supabaseAdmin
+        .from('community_funds').select('balance,total_raised').eq('id', fundId).single();
+      if (fund) {
+        await supabaseAdmin.from('community_funds').update({
+          balance: (fund.balance || 0) + parseFloat(amount),
+          total_raised: (fund.total_raised || 0) + parseFloat(amount),
+        }).eq('id', fundId);
       }
     }
   }
