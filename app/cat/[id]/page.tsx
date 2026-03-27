@@ -136,10 +136,13 @@ export default function CatPage() {
   // Adopt modal
   const [showAdoptModal, setShowAdoptModal] = useState(false);
 
-  // Lost cat matches
+  // Possible matches
   const [lostMatches, setLostMatches] = useState<any[]>([]);
   const [matchesLoading, setMatchesLoading] = useState(false);
   const [showAllMatches, setShowAllMatches] = useState(false);
+  const [matchVotes, setMatchVotes] = useState<Record<string, { same: number; diff: number; mine: string | null }>>({});
+  const [confirmedMatches, setConfirmedMatches] = useState<Set<string>>(new Set());
+  const [isAdmin, setIsAdmin] = useState(false);
 
   // Bounties
   const [bounties, setBounties] = useState<any[]>([]);
@@ -279,13 +282,28 @@ export default function CatPage() {
   }
 
   async function loadLostMatches() {
-    // Only run matching for lost cats
     const { data: thisCat } = await supabase.from('cats').select('*').eq('id', catId).single();
-    if (!thisCat || thisCat.status !== 'lost') return;
+    if (!thisCat) return;
     setMatchesLoading(true);
-    // Load all other non-lost cats with location
-    const { data: candidates } = await supabase.from('cats')
-      .select('*').neq('id', catId).not('lat', 'is', null).not('lng', 'is', null);
+    const [{ data: candidates }, { data: allVotes }, { data: confirmed }, { data: myProfile }] = await Promise.all([
+      supabase.from('cats').select('*').neq('id', catId).not('lat', 'is', null).not('lng', 'is', null),
+      supabase.from('cat_match_votes').select('*').eq('cat_a_id', catId),
+      supabase.from('cat_confirmed_matches').select('cat_b_id').or(`cat_a_id.eq.${catId},cat_b_id.eq.${catId}`),
+      user ? supabase.from('profiles').select('is_admin').eq('id', user.id).maybeSingle() : Promise.resolve({ data: null }),
+    ]);
+    if (myProfile?.is_admin) setIsAdmin(true);
+    // Build vote map
+    const voteMap: Record<string, { same: number; diff: number; mine: string | null }> = {};
+    for (const v of (allVotes || [])) {
+      if (!voteMap[v.cat_b_id]) voteMap[v.cat_b_id] = { same: 0, diff: 0, mine: null };
+      if (v.vote === 'same') voteMap[v.cat_b_id].same++;
+      else voteMap[v.cat_b_id].diff++;
+      if (v.user_id === user?.id) voteMap[v.cat_b_id].mine = v.vote;
+    }
+    setMatchVotes(voteMap);
+    // Confirmed matches set (both directions)
+    const confirmedSet = new Set<string>((confirmed || []).map((c: any) => c.cat_b_id === catId ? c.cat_a_id : c.cat_b_id));
+    setConfirmedMatches(confirmedSet);
     if (!candidates) { setMatchesLoading(false); return; }
     const srcAttrs = thisCat.attributes || {};
     const scored = candidates.map((c: any) => {
@@ -295,10 +313,35 @@ export default function CatPage() {
       const label = score >= 7 ? 'Strong match' : score >= 4 ? 'Possible match' : score >= 2 ? 'Weak match' : '';
       return { ...c, _score: score, _fields: fields, _distKm: distKm, _label: label };
     })
-      .filter((c: any) => c._score >= 2) // only show at least weak matches
+      .filter((c: any) => c._score >= 2)
       .sort((a: any, b: any) => b._score !== a._score ? b._score - a._score : a._distKm - b._distKm);
     setLostMatches(scored);
     setMatchesLoading(false);
+  }
+
+  async function handleMatchVote(catBId: string, vote: 'same' | 'different') {
+    if (!user) { window.location.href = '/login'; return; }
+    const current = matchVotes[catBId];
+    if (current?.mine === vote) {
+      // Toggle off
+      await supabase.from('cat_match_votes').delete().eq('cat_a_id', catId).eq('cat_b_id', catBId).eq('user_id', user.id);
+      setMatchVotes(v => ({ ...v, [catBId]: { ...v[catBId], [vote === 'same' ? 'same' : 'diff']: Math.max(0, (v[catBId]?.[vote === 'same' ? 'same' : 'diff'] || 1) - 1), mine: null } }));
+    } else {
+      await supabase.from('cat_match_votes').upsert({ cat_a_id: catId, cat_b_id: catBId, user_id: user.id, vote }, { onConflict: 'cat_a_id,cat_b_id,user_id' });
+      setMatchVotes(v => {
+        const prev = v[catBId] || { same: 0, diff: 0, mine: null };
+        const updated = { ...prev, mine: vote };
+        if (vote === 'same') { updated.same = prev.same + 1; if (prev.mine === 'different') updated.diff = Math.max(0, prev.diff - 1); }
+        else { updated.diff = prev.diff + 1; if (prev.mine === 'same') updated.same = Math.max(0, prev.same - 1); }
+        return { ...v, [catBId]: updated };
+      });
+    }
+  }
+
+  async function handleConfirmMatch(catBId: string) {
+    if (!user || !isAdmin) return;
+    await supabase.from('cat_confirmed_matches').upsert({ cat_a_id: catId, cat_b_id: catBId, confirmed_by: user.id });
+    setConfirmedMatches(s => new Set([...s, catBId]));
   }
 
   async function loadBounties() {
@@ -1014,55 +1057,73 @@ export default function CatPage() {
             })}
           </div>
 
-          {/* ── LOST CAT MATCHES ── */}
-          {isLost && (
-            <div style={sectionCard}>
-              <span style={sectionLabel}>🔍 Possible Matches</span>
-              {matchesLoading ? (
-                <div style={{ fontSize: 13, color: '#bbb', paddingBottom: 10 }}>Scanning database…</div>
-              ) : lostMatches.length === 0 ? (
-                <div style={{ fontSize: 13, color: '#bbb', paddingBottom: 10 }}>No similar cats found nearby yet. Check back as more cats are added.</div>
-              ) : (
-                <>
-                  <div style={{ fontSize: 12, color: '#aaa', marginBottom: 10 }}>
-                    {lostMatches.length} cat{lostMatches.length !== 1 ? 's' : ''} found with similar features, sorted by match strength then distance.
-                  </div>
-                  {(showAllMatches ? lostMatches : lostMatches.slice(0, 5)).map((m: any) => (
-                    <a key={m.id} href={`/cat/${m.id}`} style={{ textDecoration: 'none', display: 'flex', gap: 12, alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #f5f5f5' }}>
-                      {m.image_url
-                        ? <img src={m.image_url} style={{ width: 56, height: 56, borderRadius: 8, objectFit: 'cover', flexShrink: 0, border: '1px solid #f0f0f0' }} />
-                        : <div style={{ width: 56, height: 56, borderRadius: 8, background: '#f5f5f5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, flexShrink: 0 }}>🐱</div>
-                      }
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                          <span style={{ fontWeight: 700, fontSize: 14, color: '#222' }}>{m.name || 'Unknown'}</span>
-                          {m._label && (
-                            <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 6, background: m._label === 'Strong match' ? '#E8F5E9' : m._label === 'Possible match' ? '#FFF8E1' : '#f5f5f5', color: m._label === 'Strong match' ? '#2E7D32' : m._label === 'Possible match' ? '#F57F17' : '#888' }}>
-                              {m._label}
-                            </span>
-                          )}
-                        </div>
-                        <div style={{ fontSize: 11, color: '#aaa', marginBottom: 3 }}>
-                          {m._distKm < 9999 ? `${m._distKm < 1 ? (m._distKm * 1000).toFixed(0) + 'm' : m._distKm.toFixed(1) + 'km'} away` : 'Distance unknown'}
-                          {' · '}{m.status}
-                        </div>
-                        {m._fields.length > 0 && (
-                          <div style={{ fontSize: 11, color: '#FF6B6B' }}>Matches: {m._fields.join(', ')}</div>
+          {/* ── POSSIBLE MATCHES ── */}
+          <div style={sectionCard}>
+            <span style={sectionLabel}>🔍 Possible Matches</span>
+            {matchesLoading ? (
+              <div style={{ fontSize: 13, color: '#bbb', paddingBottom: 10 }}>Scanning database…</div>
+            ) : lostMatches.length === 0 ? (
+              <div style={{ fontSize: 13, color: '#bbb', paddingBottom: 10 }}>No similar cats found nearby yet.</div>
+            ) : (
+              <>
+                <div style={{ fontSize: 12, color: '#aaa', marginBottom: 10 }}>
+                  {lostMatches.length} cat{lostMatches.length !== 1 ? 's' : ''} with similar features. Vote to help confirm identity.
+                </div>
+                {(showAllMatches ? lostMatches : lostMatches.slice(0, 5)).map((m: any) => {
+                  const votes = matchVotes[m.id] || { same: 0, diff: 0, mine: null };
+                  const isConfirmed = confirmedMatches.has(m.id);
+                  const pendingReview = votes.same >= 5 && !isConfirmed;
+                  return (
+                    <div key={m.id} style={{ padding: '10px 0', borderBottom: '1px solid #f5f5f5' }}>
+                      <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                        <a href={`/cat/${m.id}`} style={{ textDecoration: 'none', display: 'flex', gap: 12, alignItems: 'center', flex: 1, minWidth: 0 }}>
+                          {m.image_url
+                            ? <img src={m.image_url} style={{ width: 52, height: 52, borderRadius: 8, objectFit: 'cover', flexShrink: 0, border: '1px solid #f0f0f0' }} />
+                            : <div style={{ width: 52, height: 52, borderRadius: 8, background: '#f5f5f5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>🐱</div>
+                          }
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2, flexWrap: 'wrap' }}>
+                              <span style={{ fontWeight: 700, fontSize: 14, color: '#222' }}>{m.name || 'Unknown'}</span>
+                              {isConfirmed && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 6, background: '#E8F5E9', color: '#2E7D32' }}>✅ Confirmed Match</span>}
+                              {!isConfirmed && m._label && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 6, background: m._label === 'Strong match' ? '#E8F5E9' : m._label === 'Possible match' ? '#FFF8E1' : '#f5f5f5', color: m._label === 'Strong match' ? '#2E7D32' : m._label === 'Possible match' ? '#F57F17' : '#888' }}>{m._label}</span>}
+                              {pendingReview && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 6, background: '#FFF3E0', color: '#E65100' }}>⏳ Pending review</span>}
+                            </div>
+                            <div style={{ fontSize: 11, color: '#aaa' }}>
+                              {m._distKm < 9999 ? `${m._distKm < 1 ? (m._distKm * 1000).toFixed(0) + 'm' : m._distKm.toFixed(1) + 'km'} away` : 'Distance unknown'}{' · '}{m.status}
+                            </div>
+                            {m._fields.length > 0 && <div style={{ fontSize: 11, color: '#FF6B6B' }}>Matches: {m._fields.join(', ')}</div>}
+                          </div>
+                        </a>
+                      </div>
+                      {/* Voting row */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                        <button onClick={() => handleMatchVote(m.id, 'same')}
+                          style={{ padding: '5px 12px', borderRadius: 20, border: `1.5px solid ${votes.mine === 'same' ? '#4CAF50' : '#eee'}`, background: votes.mine === 'same' ? '#E8F5E9' : 'white', color: votes.mine === 'same' ? '#2E7D32' : '#555', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                          👍 Same cat {votes.same > 0 && <span style={{ fontWeight: 800 }}>{votes.same}</span>}
+                        </button>
+                        <button onClick={() => handleMatchVote(m.id, 'different')}
+                          style={{ padding: '5px 12px', borderRadius: 20, border: `1.5px solid ${votes.mine === 'different' ? '#F44336' : '#eee'}`, background: votes.mine === 'different' ? '#FFF5F5' : 'white', color: votes.mine === 'different' ? '#C62828' : '#555', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                          👎 Different {votes.diff > 0 && <span style={{ fontWeight: 800 }}>{votes.diff}</span>}
+                        </button>
+                        {isAdmin && pendingReview && (
+                          <button onClick={() => handleConfirmMatch(m.id)}
+                            style={{ marginLeft: 'auto', padding: '5px 14px', borderRadius: 20, border: 'none', background: '#4CAF50', color: 'white', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                            ✅ Confirm Match
+                          </button>
                         )}
                       </div>
-                      <span style={{ fontSize: 18, color: '#ddd', flexShrink: 0 }}>›</span>
-                    </a>
-                  ))}
-                  {lostMatches.length > 5 && (
-                    <button onClick={() => setShowAllMatches(v => !v)}
-                      style={{ width: '100%', padding: '10px 0', marginTop: 6, borderRadius: 8, border: '1px solid #eee', background: 'white', fontSize: 13, fontWeight: 600, color: '#FF6B6B', cursor: 'pointer' }}>
-                      {showAllMatches ? '▲ Show less' : `▼ Show all ${lostMatches.length} matches`}
-                    </button>
-                  )}
-                </>
-              )}
-            </div>
-          )}
+                    </div>
+                  );
+                })}
+                {lostMatches.length > 5 && (
+                  <button onClick={() => setShowAllMatches(v => !v)}
+                    style={{ width: '100%', padding: '10px 0', marginTop: 6, borderRadius: 8, border: '1px solid #eee', background: 'white', fontSize: 13, fontWeight: 600, color: '#FF6B6B', cursor: 'pointer' }}>
+                    {showAllMatches ? '▲ Show less' : `▼ Show all ${lostMatches.length} matches`}
+                  </button>
+                )}
+              </>
+            )}
+          </div>
 
           {/* ── BOUNTIES ── */}
           <div style={sectionCard}>
