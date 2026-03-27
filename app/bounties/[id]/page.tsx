@@ -64,11 +64,19 @@ export default function BountyDetailPage() {
     setLoading(true);
     const [{ data: b }, { data: cl }, { data: don }] = await Promise.all([
       supabase.from('bounties').select('*, cats(*)').eq('id', id).single(),
-      supabase.from('bounty_claims').select('*, profiles(display_name,avatar_url)').eq('bounty_id', id).order('claimed_at', { ascending: false }),
+      supabase.from('bounty_claims').select('*').eq('bounty_id', id).order('claimed_at', { ascending: false }),
       supabase.from('bounty_donations').select('*').eq('bounty_id', id).order('created_at', { ascending: false }),
     ]);
     if (b) { setBounty(b); setCat(b.cats); }
-    setClaims(cl || []);
+    const claimsData = cl || [];
+    // Enrich claims with profile data
+    if (claimsData.length > 0) {
+      const userIds = [...new Set(claimsData.map(c => c.user_id).filter(Boolean))];
+      const { data: profilesData } = await supabase.from('profiles').select('id,display_name,avatar_url').in('id', userIds);
+      const profileMap = Object.fromEntries((profilesData || []).map(p => [p.id, p]));
+      claimsData.forEach(c => { c.profiles = profileMap[c.user_id] || null; });
+    }
+    setClaims(claimsData);
     setDonations(don || []);
 
     // Load votes for submitted claims
