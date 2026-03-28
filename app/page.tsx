@@ -502,7 +502,7 @@ export default function Home() {
         <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
 
         {/* Map filter pills */}
-        <div style={{ position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 10, display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'center', pointerEvents: 'none' }}>
+        <div style={{ position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 150, display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'center', pointerEvents: 'none' }}>
           {[
             { key: 'all', label: 'All', emoji: '🐾', color: '#555' },
             { key: 'lost', label: 'Lost', emoji: '🚨', color: '#F44336' },
