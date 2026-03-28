@@ -60,11 +60,22 @@ function exactMatch(a?: string | null, b?: string | null): boolean {
   if (!a || !b || a === 'Unknown' || b === 'Unknown') return false;
   return a.toLowerCase() === b.toLowerCase();
 }
+function coatMatch(a?: string | null, b?: string | null): boolean {
+  if (!a || !b || a === 'Unknown' || b === 'Unknown') return false;
+  const tokenize = (s: string) => s.toLowerCase().replace(/[^a-z\s]/g, '').split(/\s+/).filter(w => w.length > 1);
+  const tokensA = new Set(tokenize(a));
+  const tokensB = new Set(tokenize(b));
+  if (tokensA.size === 0 || tokensB.size === 0) return false;
+  let intersection = 0;
+  tokensA.forEach(t => { if (tokensB.has(t)) intersection++; });
+  const union = tokensA.size + tokensB.size - intersection;
+  // Jaccard ≥ 0.6 — "black and white" matches "white and black" but not "black"
+  return intersection / union >= 0.6;
+}
 function scoreAttrs(a: any, b: any): { score: number; fields: string[] } {
   const fields: string[] = [];
   let score = 0;
-  // Only coat color/pattern — exact match required ("black and white" ≠ "black")
-  if (exactMatch(a?.coat, b?.coat)) { score += 10; fields.push('Coat & Color'); }
+  if (coatMatch(a?.coat, b?.coat)) { score += 10; fields.push('Coat & Color'); }
   return { score, fields };
 }
 
