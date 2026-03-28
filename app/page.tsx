@@ -180,18 +180,19 @@ export default function Home() {
     const { data: cats, error } = await supabase.from('cats').select('*');
     if (error) { console.error(error); return; }
     // Fetch top voted names for cats with no owner
+    // Build top voted name map
     const { data: votes } = await supabase.from('name_votes').select('cat_id, suggested_name');
+    const topVoted: Record<string, string> = {};
     if (votes?.length) {
       const counts: Record<string, Record<string, number>> = {};
       votes.forEach(({ cat_id, suggested_name }) => {
         if (!counts[cat_id]) counts[cat_id] = {};
         counts[cat_id][suggested_name] = (counts[cat_id][suggested_name] || 0) + 1;
       });
-      const top: Record<string, string> = {};
       Object.entries(counts).forEach(([catId, names]) => {
-        top[catId] = Object.entries(names).sort((a, b) => b[1] - a[1])[0][0];
+        topVoted[catId] = Object.entries(names).sort((a, b) => b[1] - a[1])[0][0];
       });
-      setTopVotedNames(top);
+      setTopVotedNames(topVoted);
     }
     // Fetch latest sighting per cat and use that location for the pin
     const { data: sightings } = await supabase
@@ -208,6 +209,8 @@ export default function Home() {
       ...c,
       lat: latestSighting[c.id]?.lat ?? c.lat,
       lng: latestSighting[c.id]?.lng ?? c.lng,
+      // Bake display name in — voted name wins if cat has no owner name
+      name: (!c.name || c.name === 'Unknown') ? (topVoted[c.id] || 'Unknown') : c.name,
     }));
     catsDataRef.current = catsWithLocation.filter(c => typeof c.lat === 'number' && typeof c.lng === 'number' && !isNaN(c.lat) && !isNaN(c.lng));
     const bounds = mapInstanceRef.current?.getBounds();
