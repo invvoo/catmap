@@ -346,7 +346,8 @@ export default function AddCatForm({ lat, lng, onClose, onSaved }: AddCatFormPro
     if (!user) { setSightingError('You must be logged in.'); setSightingLoading(false); return; }
     let photo_url = null;
     if (photoFile) {
-      const filename = `sightings/${Date.now()}_${photoFile.name}`;
+      const ext = photoFile.name.split('.').pop()?.toLowerCase() || 'jpg';
+      const filename = `sightings/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
       const { error: uploadError } = await supabase.storage.from('cat-photos').upload(filename, photoFile);
       if (!uploadError) {
         const { data: urlData } = supabase.storage.from('cat-photos').getPublicUrl(filename);
@@ -419,31 +420,36 @@ export default function AddCatForm({ lat, lng, onClose, onSaved }: AddCatFormPro
 
   async function doSave() {
     setSaving(true);
-    const catName = name.trim() || 'Unknown';
-    let image_url = '';
-    if (photoFile) {
-      const filename = `${Date.now()}_${photoFile.name}`;
-      const { error: uploadError } = await supabase.storage.from('cat-photos').upload(filename, photoFile);
-      if (uploadError) { alert('Photo upload failed: ' + uploadError.message); setSaving(false); return; }
-      const { data } = supabase.storage.from('cat-photos').getPublicUrl(filename);
-      image_url = data.publicUrl;
-    }
-    const attributes = {
-      gender, age, coat, eyes, tnr,
-      health_status: healthStatus, friendliness,
-      feeding_status: feedingStatus, spayed_neutered: spayedNeutered,
-      tail: tail || null, scars: scars || null, notes: notes || null,
-    };
-    const safeLat = isFinite(extractedLat) ? extractedLat : lat;
-    const safeLng = isFinite(extractedLng) ? extractedLng : lng;
-    const { data: inserted, error } = await supabase.from('cats').insert({ name: catName, status, lat: safeLat, lng: safeLng, image_url, attributes }).select('id').single();
-    if (error) { alert('Error saving cat: ' + error.message); }
-    else {
+    try {
+      const catName = name.trim() || 'Unknown';
+      let image_url = '';
+      if (photoFile) {
+        const ext = photoFile.name.split('.').pop()?.toLowerCase() || 'jpg';
+        const filename = `${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+        const { error: uploadError } = await supabase.storage.from('cat-photos').upload(filename, photoFile);
+        if (uploadError) { alert('Photo upload failed: ' + uploadError.message); return; }
+        const { data } = supabase.storage.from('cat-photos').getPublicUrl(filename);
+        image_url = data.publicUrl;
+      }
+      const attributes = {
+        gender, age, coat, eyes, tnr,
+        health_status: healthStatus, friendliness,
+        feeding_status: feedingStatus, spayed_neutered: spayedNeutered,
+        tail: tail || null, scars: scars || null, notes: notes || null,
+      };
+      const safeLat = isFinite(extractedLat) ? extractedLat : lat;
+      const safeLng = isFinite(extractedLng) ? extractedLng : lng;
+      const { data: inserted, error } = await supabase.from('cats').insert({ name: catName, status, lat: safeLat, lng: safeLng, image_url, attributes }).select('id').single();
+      if (error) { alert('Error saving cat: ' + error.message); return; }
       supabase.rpc('increment_trust_score', { uid: user.id, pts: 2 });
       onSaved();
       if (inserted?.id) { window.location.href = `/cat/${inserted.id}`; } else { onClose(); }
+    } catch (err) {
+      alert('Something went wrong. Please try again.');
+      console.error('doSave error:', err);
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
   }
 
   return (
