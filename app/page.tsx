@@ -143,6 +143,8 @@ export default function Home() {
   const [userLocation, setUserLocation] = useState(null);
   const [feedCats, setFeedCats] = useState([]);
   const [visibleCount, setVisibleCount] = useState(0);
+  const [mapFilter, setMapFilter] = useState<string>('all');
+  const mapFilterRef = useRef('all');
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -379,6 +381,19 @@ export default function Home() {
     );
   }
 
+  function applyMapFilter(filter: string) {
+    mapFilterRef.current = filter;
+    setMapFilter(filter);
+    const map = mapInstanceRef.current;
+    if (!map) return;
+    const showOrgs = filter === 'all' || filter === 'orgs';
+    orgMarkersRef.current.forEach(m => { m.map = showOrgs ? map : null; });
+    const filteredCats = filter === 'all' || filter === 'orgs'
+      ? catsDataRef.current
+      : catsDataRef.current.filter(c => c.status === filter);
+    renderClusters(filteredCats);
+  }
+
   function handleFeedCardClick(cat) {
     setSelectedCat(null); setPopupPixel(null);
     mapInstanceRef.current?.panTo({ lat: cat.lat, lng: cat.lng });
@@ -485,6 +500,27 @@ export default function Home() {
       {/* ── MAP ── */}
       <div className="catmap-map" style={{ flex: '0 0 70%', minHeight: 0, position: 'relative' }}>
         <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
+
+        {/* Map filter pills */}
+        <div style={{ position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 10, display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'center', pointerEvents: 'none' }}>
+          {[
+            { key: 'all', label: 'All', emoji: '🐾', color: '#555' },
+            { key: 'lost', label: 'Lost', emoji: '🚨', color: '#F44336' },
+            { key: 'stray', label: 'Strays', emoji: '🏚️', color: '#FF9800' },
+            { key: 'community', label: 'Community', emoji: '🏘️', color: '#4CAF50' },
+            { key: 'homed', label: 'Homed', emoji: '🏠', color: '#2196F3' },
+            { key: 'orgs', label: 'Orgs', emoji: '🏢', color: '#9C27B0' },
+          ].map(f => {
+            const active = mapFilter === f.key;
+            return (
+              <button key={f.key} onClick={() => applyMapFilter(f.key)}
+                style={{ pointerEvents: 'all', padding: '5px 12px', borderRadius: 20, border: 'none', background: active ? f.color : 'white', color: active ? 'white' : '#444', fontWeight: 700, fontSize: 12, cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.18)', whiteSpace: 'nowrap', transition: 'background 0.15s' }}>
+                {f.emoji} {f.label}
+              </button>
+            );
+          })}
+        </div>
+
         {selectedCat && popupPixel && (
           <MapPopup cat={selectedCat} pixelPos={popupPixel} onClose={() => { setSelectedCat(null); setPopupPixel(null); }} userLocation={userLocation} mapRef={mapRef} />
         )}

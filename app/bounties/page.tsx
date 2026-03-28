@@ -18,11 +18,27 @@ function timeAgo(d: string) {
   return `${days}d ago`;
 }
 
+function haversineKm(lat1, lng1, lat2, lng2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function fmtDist(km) {
+  if (km < 1) return `${Math.round(km * 1000)} m`;
+  return `${km.toFixed(1)} km`;
+}
+
 export default function BountiesPage() {
   const [bounties, setBounties] = useState<any[]>([]);
   const [topVoted, setTopVoted] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<'newest' | 'nearest'>('newest');
+  const [userLoc, setUserLoc] = useState<{ lat: number; lng: number } | null>(null);
+  const [locLoading, setLocLoading] = useState(false);
   const [user, setUser] = useState<any>(null);
 
   useEffect(() => {
@@ -45,22 +61,42 @@ export default function BountiesPage() {
     setLoading(false);
   }
 
-  const filtered = filter === 'all' ? bounties : bounties.filter(b => b.type === filter);
+  function requestLocation() {
+    if (!navigator.geolocation) return;
+    setLocLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      pos => { setUserLoc({ lat: pos.coords.latitude, lng: pos.coords.longitude }); setLocLoading(false); setSortBy('nearest'); },
+      () => setLocLoading(false),
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  }
 
   const typeKeys = Object.keys(BOUNTY_TYPES) as BountyType[];
+
+  const withDist = bounties.map(b => ({
+    ...b,
+    _km: userLoc && b.cats?.lat && b.cats?.lng ? haversineKm(userLoc.lat, userLoc.lng, b.cats.lat, b.cats.lng) : null,
+  }));
+
+  const filtered = withDist
+    .filter(b => filter === 'all' || b.type === filter)
+    .sort((a, b) => {
+      if (sortBy === 'nearest' && a._km !== null && b._km !== null) return a._km - b._km;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
 
   return (
     <div style={{ minHeight: '100vh', background: '#f7f7f7', fontFamily: 'system-ui, sans-serif' }}>
       <Navbar />
 
       <div style={{ maxWidth: 860, margin: '0 auto', padding: '32px 20px' }}>
-        <div style={{ marginBottom: 28 }}>
+        <div style={{ marginBottom: 20 }}>
           <h1 style={{ fontSize: 26, fontWeight: 800, color: '#222', margin: '0 0 6px' }}>🐾 Open Bounties</h1>
           <p style={{ color: '#888', fontSize: 14, margin: 0 }}>Help a cat in need and get paid for verified care.</p>
         </div>
 
-        {/* Filter tabs */}
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 24 }}>
+        {/* Type filter tabs */}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
           <button onClick={() => setFilter('all')}
             style={{ padding: '7px 14px', borderRadius: 20, border: 'none', background: filter === 'all' ? '#FF6B6B' : '#eee', color: filter === 'all' ? 'white' : '#555', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
             All
@@ -71,6 +107,20 @@ export default function BountiesPage() {
               {BOUNTY_TYPES[t].emoji} {BOUNTY_TYPES[t].label}
             </button>
           ))}
+        </div>
+
+        {/* Sort controls */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 13, color: '#888', fontWeight: 600 }}>Sort:</span>
+          <button onClick={() => setSortBy('newest')}
+            style={{ padding: '6px 14px', borderRadius: 20, border: 'none', background: sortBy === 'newest' ? '#333' : '#eee', color: sortBy === 'newest' ? 'white' : '#555', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+            🕐 Newest
+          </button>
+          <button
+            onClick={() => { if (userLoc) { setSortBy('nearest'); } else { requestLocation(); } }}
+            style={{ padding: '6px 14px', borderRadius: 20, border: 'none', background: sortBy === 'nearest' ? '#333' : '#eee', color: sortBy === 'nearest' ? 'white' : '#555', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+            {locLoading ? '📍 Getting location…' : '📍 Nearest'}
+          </button>
         </div>
 
         {loading ? (
@@ -94,11 +144,18 @@ export default function BountiesPage() {
                     onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = ''; (e.currentTarget as HTMLElement).style.boxShadow = '0 2px 12px rgba(0,0,0,0.07)'; }}>
 
                     {/* Cat photo strip */}
-                    {b.cats?.image_url ? (
-                      <img src={b.cats.image_url} alt={b.cats ? resolveDisplayName(b.cats, topVoted) : ''} style={{ width: '100%', height: 120, objectFit: 'cover', display: 'block' }} />
-                    ) : (
-                      <div style={{ width: '100%', height: 80, background: `${policy.color}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 36 }}>{policy.emoji}</div>
-                    )}
+                    <div style={{ position: 'relative' }}>
+                      {b.cats?.image_url ? (
+                        <img src={b.cats.image_url} alt={b.cats ? resolveDisplayName(b.cats, topVoted) : ''} style={{ width: '100%', height: 120, objectFit: 'cover', display: 'block' }} />
+                      ) : (
+                        <div style={{ width: '100%', height: 80, background: `${policy.color}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 36 }}>{policy.emoji}</div>
+                      )}
+                      {b._km !== null && (
+                        <div style={{ position: 'absolute', top: 8, right: 8, background: 'rgba(0,0,0,0.6)', color: 'white', fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 12 }}>
+                          📍 {fmtDist(b._km)}
+                        </div>
+                      )}
+                    </div>
 
                     <div style={{ padding: '14px 16px 16px' }}>
                       {/* Type badge + status */}
