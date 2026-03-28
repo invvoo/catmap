@@ -629,10 +629,8 @@ export default function CatPage() {
       supabase.rpc('increment_trust_score', { uid: user.id, pts: 1 });
       setSightingSuccess(true);
       if (cat.owner_id && cat.owner_id !== user.id) {
-        await supabase.from('notifications').insert({
-          user_id: cat.owner_id, cat_id: catId, type: 'sighting',
-          message: `📍 Someone spotted ${cat.name}!`,
-        });
+        fetch('/api/notify', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: cat.owner_id, catId, type: 'sighting', message: `📍 Someone spotted ${cat.name}!`, catName: cat.name }) });
       }
       await loadSightings(); await loadGallery();
       setTimeout(() => { setShowSightingModal(false); setSightingSuccess(false); }, 2000);
@@ -650,12 +648,10 @@ export default function CatPage() {
     const { data: sighters } = await supabase.from('sightings').select('user_id').eq('cat_id', catId);
     const uniqueSighters = [...new Set((sighters || []).map((s: any) => s.user_id))].filter(id => id !== user?.id);
     if (uniqueSighters.length > 0) {
-      await supabase.from('notifications').insert(
-        uniqueSighters.map(uid => ({
-          user_id: uid, cat_id: catId, type: 'lost',
-          message: `🚨 ${cat.name} has been marked as lost! You've spotted this cat before.`,
-        }))
-      );
+      uniqueSighters.forEach(uid => {
+        fetch('/api/notify', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: uid, catId, type: 'lost', message: `🚨 ${cat.name} has been marked as lost! You've spotted this cat before.`, catName: cat.name }) });
+      });
     }
     setCat((prev: any) => ({ ...prev, previous_status: prev.status, status: 'lost' }));
     setLostSaving(false); setShowLostModal(false);

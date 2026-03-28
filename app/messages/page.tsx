@@ -116,7 +116,8 @@ export default function MessagesPage() {
     setNewMessage('');
     if (msg) {
       setMessages(prev => [...prev, msg]);
-      await supabase.from('notifications').insert({ user_id: selectedUserId, cat_id: null, type: 'message', message: '✉️ You have a new message' });
+      fetch('/api/notify', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: selectedUserId, type: 'message', message: '✉️ You have a new message' }) });
       setConversations(prev => {
         const exists = prev.find(c => c.otherId === selectedUserId);
         if (exists) return prev.map(c => c.otherId === selectedUserId ? { ...c, lastMsg: msg } : c);

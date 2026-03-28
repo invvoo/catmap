@@ -8,24 +8,49 @@ export default function Navbar() {
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
   const [unread, setUnread] = useState(0);
+  const [notifUnread, setNotifUnread] = useState(0);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showHomeMenu, setShowHomeMenu] = useState(false);
 
   useEffect(() => {
+    let msgChannel: any = null;
+    let notifChannel: any = null;
+
     supabase.auth.getUser().then(({ data }) => {
-      setUser(data.user);
-      if (data.user) {
-        supabase.from('profiles').select('display_name,avatar_url').eq('id', data.user.id).maybeSingle()
-          .then(({ data: p }) => setProfile(p));
-        supabase.from('messages').select('id', { count: 'exact' }).eq('to_id', data.user.id).eq('read', false)
-          .then(({ count }) => setUnread(count || 0));
-      }
+      const u = data.user;
+      setUser(u);
+      if (!u) return;
+
+      supabase.from('profiles').select('display_name,avatar_url').eq('id', u.id).maybeSingle()
+        .then(({ data: p }) => setProfile(p));
+      supabase.from('messages').select('id', { count: 'exact' }).eq('to_id', u.id).eq('read', false)
+        .then(({ count }) => setUnread(count || 0));
+      supabase.from('notifications').select('id', { count: 'exact' }).eq('user_id', u.id).eq('read', false)
+        .then(({ count }) => setNotifUnread(count || 0));
+
+      // Realtime: new messages
+      msgChannel = supabase.channel(`msgs-${u.id}`)
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `to_id=eq.${u.id}` },
+          () => setUnread(n => n + 1))
+        .subscribe();
+
+      // Realtime: new notifications
+      notifChannel = supabase.channel(`notifs-${u.id}`)
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${u.id}` },
+          () => setNotifUnread(n => n + 1))
+        .subscribe();
     });
+
     const { data: listener } = supabase.auth.onAuthStateChange((_e, session) => {
       setUser(session?.user ?? null);
-      if (!session?.user) { setProfile(null); setUnread(0); }
+      if (!session?.user) { setProfile(null); setUnread(0); setNotifUnread(0); }
     });
-    return () => listener.subscription.unsubscribe();
+
+    return () => {
+      listener.subscription.unsubscribe();
+      if (msgChannel) supabase.removeChannel(msgChannel);
+      if (notifChannel) supabase.removeChannel(notifChannel);
+    };
   }, []);
 
   function handleMetACat() {
@@ -37,6 +62,8 @@ export default function Navbar() {
     await supabase.auth.signOut();
     window.location.href = '/';
   }
+
+  const totalUnread = unread + notifUnread;
 
   return (
     <>
@@ -100,11 +127,18 @@ export default function Navbar() {
           </button>
           {user ? (
             <div style={{ position: 'relative' }}>
-              <div onClick={() => setShowUserMenu(v => !v)}
-                style={{ width: 36, height: 36, borderRadius: '50%', background: '#FF6B6B', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 15, cursor: 'pointer', border: '2px solid #ffccbc', overflow: 'hidden', flexShrink: 0 }}>
-                {profile?.avatar_url
-                  ? <img src={profile.avatar_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  : <span>{user.email?.[0]?.toUpperCase() ?? '?'}</span>}
+              {/* Avatar with unread badge */}
+              <div onClick={() => setShowUserMenu(v => !v)} style={{ position: 'relative', cursor: 'pointer' }}>
+                <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#FF6B6B', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 15, border: '2px solid #ffccbc', overflow: 'hidden', flexShrink: 0 }}>
+                  {profile?.avatar_url
+                    ? <img src={profile.avatar_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    : <span>{user.email?.[0]?.toUpperCase() ?? '?'}</span>}
+                </div>
+                {totalUnread > 0 && (
+                  <div style={{ position: 'absolute', top: -4, right: -4, background: '#F44336', color: 'white', borderRadius: '50%', width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 800, border: '2px solid white' }}>
+                    {totalUnread > 9 ? '9+' : totalUnread}
+                  </div>
+                )}
               </div>
               {showUserMenu && (
                 <>
@@ -123,9 +157,12 @@ export default function Navbar() {
                       <span>✉️ Messages</span>
                       {unread > 0 && <span style={{ background: '#FF6B6B', color: 'white', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 800 }}>{unread > 9 ? '9+' : unread}</span>}
                     </a>
-                    <a href="/notifications" onClick={() => setShowUserMenu(false)}
-                      style={{ display: 'block', padding: '11px 16px', fontSize: 13, fontWeight: 600, color: '#333', textDecoration: 'none', borderBottom: '1px solid #f5f5f5' }}
-                      onMouseEnter={e => (e.currentTarget.style.background = '#f9f9f9')} onMouseLeave={e => (e.currentTarget.style.background = 'white')}>🔔 Notifications</a>
+                    <a href="/notifications" onClick={() => { setShowUserMenu(false); setNotifUnread(0); }}
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 16px', fontSize: 13, fontWeight: 600, color: '#333', textDecoration: 'none', borderBottom: '1px solid #f5f5f5' }}
+                      onMouseEnter={e => (e.currentTarget.style.background = '#f9f9f9')} onMouseLeave={e => (e.currentTarget.style.background = 'white')}>
+                      <span>🔔 Notifications</span>
+                      {notifUnread > 0 && <span style={{ background: '#FF6B6B', color: 'white', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 800 }}>{notifUnread > 9 ? '9+' : notifUnread}</span>}
+                    </a>
                     <button onClick={handleLogout}
                       style={{ width: '100%', padding: '11px 16px', border: 'none', background: 'white', textAlign: 'left', fontSize: 13, color: '#F44336', fontWeight: 600, cursor: 'pointer' }}
                       onMouseEnter={e => (e.currentTarget.style.background = '#fff5f5')} onMouseLeave={e => (e.currentTarget.style.background = 'white')}>Sign out</button>
