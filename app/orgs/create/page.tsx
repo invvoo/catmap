@@ -3,7 +3,7 @@
 'use client';
 export const dynamic = 'force-dynamic';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../../lib/supabase';
 import Navbar from '../../components/Navbar';
 
@@ -30,6 +30,12 @@ export default function CreateOrgPage() {
     website: '',
     description: '',
   });
+  const [resolvedAddress, setResolvedAddress] = useState(''); // formatted address from Places
+  const [resolvedLat, setResolvedLat] = useState(null);
+  const [resolvedLng, setResolvedLng] = useState(null);
+
+  const autocompleteInputRef = useRef(null);
+  const autocompleteRef = useRef(null);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -38,47 +44,116 @@ export default function CreateOrgPage() {
     });
   }, []);
 
+  // Load Google Places Autocomplete once Maps script is available
+  useEffect(() => {
+    function initAutocomplete() {
+      if (!autocompleteInputRef.current || !window.google?.maps?.places) return;
+      const ac = new window.google.maps.places.Autocomplete(autocompleteInputRef.current, {
+        types: ['address'],
+        fields: ['formatted_address', 'geometry', 'address_components'],
+      });
+      ac.addListener('place_changed', () => {
+        const place = ac.getPlace();
+        if (!place.geometry) return;
+
+        const lat = place.geometry.location.lat();
+        const lng = place.geometry.location.lng();
+        setResolvedLat(lat);
+        setResolvedLng(lng);
+        setResolvedAddress(place.formatted_address || '');
+
+        // Parse address_components into individual fields
+        const get = (type) => {
+          const comp = place.address_components?.find(c => c.types.includes(type));
+          return comp?.long_name || '';
+        };
+        const streetNumber = get('street_number');
+        const route = get('route');
+        setForm(f => ({
+          ...f,
+          street: [streetNumber, route].filter(Boolean).join(' '),
+          city: get('locality') || get('sublocality') || get('administrative_area_level_2'),
+          state: get('administrative_area_level_1'),
+          zip: get('postal_code'),
+          country: get('country'),
+        }));
+      });
+      autocompleteRef.current = ac;
+    }
+
+    // If Maps already loaded
+    if (window.google?.maps?.places) {
+      initAutocomplete();
+      return;
+    }
+
+    // Wait for Maps script
+    const existing = document.querySelector('script[src*="maps.googleapis.com"]');
+    if (existing) {
+      existing.addEventListener('load', initAutocomplete);
+      return () => existing.removeEventListener('load', initAutocomplete);
+    }
+
+    // Load it ourselves with places library
+    const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY;
+    const script = document.createElement('script');
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=places`;
+    script.async = true;
+    script.onload = initAutocomplete;
+    document.head.appendChild(script);
+  }, []);
+
   function set(field, value) {
     setForm(f => ({ ...f, [field]: value }));
-  }
-
-  async function geocodeAddress(address) {
-    const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY;
-    const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${key}`);
-    const json = await res.json();
-    if (json.status === 'OK' && json.results[0]) {
-      const { lat, lng } = json.results[0].geometry.location;
-      return { lat, lng, formatted: json.results[0].formatted_address };
+    // If user manually edits a field after autocomplete, clear the resolved coords
+    // so we know we need to re-validate
+    if (['street', 'city', 'state', 'zip', 'country'].includes(field)) {
+      setResolvedLat(null);
+      setResolvedLng(null);
     }
-    return null;
   }
 
   async function handleSubmit(e) {
     e.preventDefault();
     setError('');
     if (!form.name.trim()) { setError('Organization name is required.'); return; }
-    if (!form.street.trim() || !form.city.trim()) { setError('Street and city are required to place your organization on the map.'); return; }
+    if (!form.street.trim() || !form.city.trim()) {
+      setError('Please search for your address using the search field above.');
+      return;
+    }
 
     setLoading(true);
 
-    // Build full address string for geocoding
-    const fullAddress = [form.street, form.city, form.state, form.zip, form.country].filter(Boolean).join(', ');
-    const geo = await geocodeAddress(fullAddress);
-    if (!geo) {
-      setError('Could not find that address. Please check the address and try again.');
-      setLoading(false);
-      return;
+    let lat = resolvedLat;
+    let lng = resolvedLng;
+    let formattedAddress = resolvedAddress;
+
+    // If no resolved coords (user typed manually), fall back to geocode
+    if (!lat || !lng) {
+      const fullAddress = [form.street, form.city, form.state, form.zip, form.country].filter(Boolean).join(', ');
+      const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY;
+      const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(fullAddress)}&key=${key}`);
+      const json = await res.json();
+      if (json.status === 'OK' && json.results[0]) {
+        lat = json.results[0].geometry.location.lat;
+        lng = json.results[0].geometry.location.lng;
+        formattedAddress = json.results[0].formatted_address;
+      } else {
+        setError('Could not find that address. Please use the address search field to select your address from the dropdown.');
+        setLoading(false);
+        return;
+      }
     }
 
     const { data, error: insertError } = await supabase.from('organizations').insert({
       name: form.name.trim(),
       type: form.type,
-      address: geo.formatted,
+      address: formattedAddress,
       phone: form.phone.trim() || null,
       website: form.website.trim() || null,
       description: form.description.trim() || null,
-      lat: geo.lat,
-      lng: geo.lng,
+      lat,
+      lng,
       created_by: user.id,
       verified: false,
     }).select().single();
@@ -117,44 +192,39 @@ export default function CreateOrgPage() {
               </select>
             </div>
 
-            {/* Address fields */}
+            {/* Address search */}
             <div>
-              <label style={{ ...labelStyle, marginBottom: 10 }}>Address *</label>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <input
-                  style={inputStyle}
-                  value={form.street}
-                  onChange={e => set('street', e.target.value)}
-                  placeholder="Street address"
-                />
-                <input
-                  style={inputStyle}
-                  value={form.city}
-                  onChange={e => set('city', e.target.value)}
-                  placeholder="City"
-                />
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  <input
-                    style={inputStyle}
-                    value={form.state}
-                    onChange={e => set('state', e.target.value)}
-                    placeholder="State / Province"
-                  />
-                  <input
-                    style={inputStyle}
-                    value={form.zip}
-                    onChange={e => set('zip', e.target.value)}
-                    placeholder="ZIP / Postal code"
-                  />
+              <label style={labelStyle}>🔍 Search Address *</label>
+              <input
+                ref={autocompleteInputRef}
+                style={{ ...inputStyle, borderColor: resolvedLat ? '#4CAF50' : '#e0e0e0' }}
+                placeholder="Start typing your address…"
+                defaultValue=""
+              />
+              {resolvedLat && (
+                <div style={{ fontSize: 11, color: '#4CAF50', marginTop: 5, fontWeight: 600 }}>
+                  ✓ Address confirmed — {resolvedAddress}
                 </div>
-                <input
-                  style={inputStyle}
-                  value={form.country}
-                  onChange={e => set('country', e.target.value)}
-                  placeholder="Country"
-                />
-              </div>
+              )}
+              {!resolvedLat && (
+                <div style={{ fontSize: 11, color: '#aaa', marginTop: 5 }}>
+                  Type your address and select from the dropdown to confirm location.
+                </div>
+              )}
             </div>
+
+            {/* Auto-filled address fields (editable) */}
+            {(form.street || form.city) && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <input style={{ ...inputStyle, background: '#fafafa' }} value={form.street} onChange={e => set('street', e.target.value)} placeholder="Street address" />
+                <input style={{ ...inputStyle, background: '#fafafa' }} value={form.city} onChange={e => set('city', e.target.value)} placeholder="City" />
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <input style={{ ...inputStyle, background: '#fafafa' }} value={form.state} onChange={e => set('state', e.target.value)} placeholder="State / Province" />
+                  <input style={{ ...inputStyle, background: '#fafafa' }} value={form.zip} onChange={e => set('zip', e.target.value)} placeholder="ZIP / Postal code" />
+                </div>
+                <input style={{ ...inputStyle, background: '#fafafa' }} value={form.country} onChange={e => set('country', e.target.value)} placeholder="Country" />
+              </div>
+            )}
 
             <div>
               <label style={labelStyle}>Phone</label>
@@ -178,7 +248,7 @@ export default function CreateOrgPage() {
             )}
 
             <button type="submit" disabled={loading} style={{ padding: '13px', borderRadius: 10, border: 'none', background: loading ? '#bbb' : '#3949ab', color: 'white', fontWeight: 700, fontSize: 15, cursor: loading ? 'default' : 'pointer' }}>
-              {loading ? '📍 Finding location...' : '🏢 Register Organization'}
+              {loading ? '📍 Saving...' : '🏢 Register Organization'}
             </button>
           </div>
         </form>
