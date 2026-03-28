@@ -501,8 +501,8 @@ export default function Home() {
       <div className="catmap-map" style={{ flex: '0 0 70%', minHeight: 0, position: 'relative' }}>
         <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
 
-        {/* Map filter pills */}
-        <div style={{ position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 150, display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'center', pointerEvents: 'none' }}>
+        {/* Map filter pills — single scrollable row */}
+        <div style={{ position: 'absolute', top: 8, left: 0, right: 0, zIndex: 150, display: 'flex', gap: 6, flexWrap: 'nowrap', overflowX: 'auto', overflowY: 'hidden', padding: '4px 12px', pointerEvents: 'none', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' }}>
           {[
             { key: 'all', label: 'All', emoji: '🐾', color: '#555' },
             { key: 'lost', label: 'Lost', emoji: '🚨', color: '#F44336' },
@@ -514,7 +514,7 @@ export default function Home() {
             const active = mapFilter === f.key;
             return (
               <button key={f.key} onClick={() => applyMapFilter(f.key)}
-                style={{ pointerEvents: 'all', padding: '5px 12px', borderRadius: 20, border: 'none', background: active ? f.color : 'white', color: active ? 'white' : '#444', fontWeight: 700, fontSize: 12, cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.18)', whiteSpace: 'nowrap', transition: 'background 0.15s' }}>
+                style={{ pointerEvents: 'all', flexShrink: 0, padding: '5px 12px', borderRadius: 20, border: 'none', background: active ? f.color : 'white', color: active ? 'white' : '#444', fontWeight: 700, fontSize: 12, cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.18)', whiteSpace: 'nowrap', transition: 'background 0.15s' }}>
                 {f.emoji} {f.label}
               </button>
             );
