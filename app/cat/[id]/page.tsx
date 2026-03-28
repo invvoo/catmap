@@ -208,13 +208,12 @@ export default function CatPage() {
 
   async function loadNameVotes() {
     const [{ data }, { data: catData }] = await Promise.all([
-      supabase.from('cat_name_votes').select('suggested_name').eq('cat_id', catId),
+      supabase.from('name_votes').select('suggested_name').eq('cat_id', catId),
       supabase.from('cats').select('name').eq('id', catId).single(),
     ]);
-    if (!data) return;
     const counts: Record<string, number> = {};
-    data.forEach(({ suggested_name }) => { counts[suggested_name] = (counts[suggested_name] || 0) + 1; });
-    // Include the original upload name as a vote option
+    (data || []).forEach(({ suggested_name }) => { counts[suggested_name] = (counts[suggested_name] || 0) + 1; });
+    // Always include the original upload name as a vote option
     const uploadName = catData?.name;
     if (uploadName && uploadName !== 'Unknown' && !counts[uploadName]) {
       counts[uploadName] = 0;
@@ -223,7 +222,7 @@ export default function CatPage() {
   }
 
   async function loadMyVote(userId: string) {
-    const { data } = await supabase.from('cat_name_votes').select('suggested_name').eq('cat_id', catId).eq('user_id', userId).maybeSingle();
+    const { data } = await supabase.from('name_votes').select('suggested_name').eq('cat_id', catId).eq('user_id', userId).maybeSingle();
     if (data) setMyVote(data.suggested_name);
   }
 
@@ -506,7 +505,7 @@ export default function CatPage() {
   async function handleVote(name: string) {
     if (!user) return;
     setVoteSaving(true);
-    await supabase.from('cat_name_votes').upsert({ cat_id: catId, user_id: user.id, suggested_name: name }, { onConflict: 'cat_id,user_id' });
+    await supabase.from('name_votes').upsert({ cat_id: catId, user_id: user.id, suggested_name: name }, { onConflict: 'cat_id,user_id' });
     setMyVote(name); await loadNameVotes(); setVoteSaving(false);
   }
 
