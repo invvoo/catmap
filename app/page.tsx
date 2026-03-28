@@ -414,7 +414,7 @@ export default function Home() {
       `}</style>
 
       {/* ── NAVBAR ── */}
-      <div className="catmap-navbar" style={{ flexShrink: 0, background: 'white', padding: '10px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 2px 10px rgba(0,0,0,0.08)', zIndex: 100 }}>
+      <div className="catmap-navbar" style={{ flexShrink: 0, background: 'white', padding: '10px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 2px 10px rgba(0,0,0,0.08)', zIndex: 160 }}>
         <div style={{ position: 'relative' }}>
           <div onClick={() => setShowHomeMenu(v => !v)} style={{ fontSize: 20, fontWeight: 700, color: '#222', cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', gap: 4 }}>
             🐱 CatMap <span style={{ fontSize: 10, color: '#aaa', marginTop: 2 }}>▾</span>
