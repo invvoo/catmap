@@ -1215,7 +1215,9 @@ export default function CatPage() {
 
             {isLost ? (
               <>
-                <button onClick={() => setShowFoundModal(true)} style={{ padding: 14, borderRadius: 10, border: '1px solid #4CAF50', background: 'white', color: '#4CAF50', fontSize: 15, fontWeight: 600, cursor: 'pointer' }}>✅ Mark as Found</button>
+                {isOwner && (
+                  <button onClick={() => setShowFoundModal(true)} style={{ padding: 14, borderRadius: 10, border: '1px solid #4CAF50', background: 'white', color: '#4CAF50', fontSize: 15, fontWeight: 600, cursor: 'pointer' }}>✅ Mark as Found</button>
+                )}
                 <button onClick={() => window.open(`/poster?catId=${cat.id}`, '_blank')} style={{ padding: 14, borderRadius: 10, border: '1px solid #111', background: 'white', fontSize: 15, cursor: 'pointer', fontWeight: 600 }}>🖨️ Generate Lost Poster</button>
               </>
             ) : (
