@@ -25,8 +25,6 @@ export default function CreateOrgPage() {
     phone: '',
     website: '',
     description: '',
-    lat: '',
-    lng: '',
   });
 
   useEffect(() => {
@@ -40,28 +38,42 @@ export default function CreateOrgPage() {
     setForm(f => ({ ...f, [field]: value }));
   }
 
+  async function geocodeAddress(address) {
+    const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY;
+    const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${key}`);
+    const json = await res.json();
+    if (json.status === 'OK' && json.results[0]) {
+      const { lat, lng } = json.results[0].geometry.location;
+      return { lat, lng, formatted: json.results[0].formatted_address };
+    }
+    return null;
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     setError('');
     if (!form.name.trim()) { setError('Organization name is required.'); return; }
-    if (!form.type) { setError('Please select a type.'); return; }
-
-    const lat = form.lat ? parseFloat(form.lat) : null;
-    const lng = form.lng ? parseFloat(form.lng) : null;
-
-    if (form.lat && isNaN(lat)) { setError('Latitude must be a number.'); return; }
-    if (form.lng && isNaN(lng)) { setError('Longitude must be a number.'); return; }
+    if (!form.address.trim()) { setError('Full address is required to place your organization on the map.'); return; }
 
     setLoading(true);
+
+    // Geocode the address
+    const geo = await geocodeAddress(form.address.trim());
+    if (!geo) {
+      setError('Could not find that address. Please enter a full address including city, state, and country.');
+      setLoading(false);
+      return;
+    }
+
     const { data, error: insertError } = await supabase.from('organizations').insert({
       name: form.name.trim(),
       type: form.type,
-      address: form.address.trim() || null,
+      address: geo.formatted, // use the cleaned-up address from Google
       phone: form.phone.trim() || null,
       website: form.website.trim() || null,
       description: form.description.trim() || null,
-      lat: lat,
-      lng: lng,
+      lat: geo.lat,
+      lng: geo.lng,
       created_by: user.id,
       verified: false,
     }).select().single();
@@ -78,7 +90,6 @@ export default function CreateOrgPage() {
     <div style={{ minHeight: '100vh', background: '#f7f7f7', fontFamily: 'system-ui, sans-serif' }}>
       <Navbar />
 
-      {/* Hero */}
       <div style={{ background: 'linear-gradient(135deg, #1a237e, #3949ab)', padding: '32px 20px 28px', textAlign: 'center', color: 'white' }}>
         <div style={{ fontSize: 44, marginBottom: 8 }}>🏢</div>
         <h1 style={{ fontSize: 26, fontWeight: 800, margin: '0 0 6px' }}>Register Your Organization</h1>
@@ -102,8 +113,14 @@ export default function CreateOrgPage() {
             </div>
 
             <div>
-              <label style={labelStyle}>Address</label>
-              <input style={inputStyle} value={form.address} onChange={e => set('address', e.target.value)} placeholder="123 Main St, New York, NY 10001" />
+              <label style={labelStyle}>Full Address *</label>
+              <input
+                style={inputStyle}
+                value={form.address}
+                onChange={e => set('address', e.target.value)}
+                placeholder="123 Main St, Brooklyn, NY 11201, USA"
+              />
+              <div style={{ fontSize: 11, color: '#aaa', marginTop: 5 }}>Include street, city, state, zip, and country. This is used to place your organization on the map.</div>
             </div>
 
             <div>
@@ -118,22 +135,7 @@ export default function CreateOrgPage() {
 
             <div>
               <label style={labelStyle}>Description</label>
-              <textarea style={{ ...inputStyle, minHeight: 90, resize: 'vertical' }} value={form.description} onChange={e => set('description', e.target.value)} placeholder="Tell people about your organization..." />
-            </div>
-
-            <div>
-              <label style={labelStyle}>Location (for map pin)</label>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <div>
-                  <label style={{ ...labelStyle, fontSize: 11, color: '#888', fontWeight: 500 }}>Latitude</label>
-                  <input style={inputStyle} value={form.lat} onChange={e => set('lat', e.target.value)} placeholder="40.7128" type="number" step="any" />
-                </div>
-                <div>
-                  <label style={{ ...labelStyle, fontSize: 11, color: '#888', fontWeight: 500 }}>Longitude</label>
-                  <input style={inputStyle} value={form.lng} onChange={e => set('lng', e.target.value)} placeholder="-74.0060" type="number" step="any" />
-                </div>
-              </div>
-              <div style={{ fontSize: 11, color: '#aaa', marginTop: 5 }}>Tip: Search your address on Google Maps and copy the coordinates from the URL.</div>
+              <textarea style={{ ...inputStyle, minHeight: 90, resize: 'vertical' }} value={form.description} onChange={e => set('description', e.target.value)} placeholder="Tell people about your organization, what you do, and how to adopt or get help..." />
             </div>
 
             {error && (
@@ -143,7 +145,7 @@ export default function CreateOrgPage() {
             )}
 
             <button type="submit" disabled={loading} style={{ padding: '13px', borderRadius: 10, border: 'none', background: loading ? '#bbb' : '#3949ab', color: 'white', fontWeight: 700, fontSize: 15, cursor: loading ? 'default' : 'pointer' }}>
-              {loading ? 'Registering...' : '🏢 Register Organization'}
+              {loading ? '📍 Finding location...' : '🏢 Register Organization'}
             </button>
           </div>
         </form>
