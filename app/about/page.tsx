@@ -195,29 +195,29 @@ export default function AboutPage() {
         <div className="content" ref={paragraphsRef}>
 
           <p className="story-paragraph fade-in" style={{ transitionDelay: '0.1s' }}>
-            My wife has always had this huge, impossible-in-the-best-way dream — <em>give every cat in the world a home.</em> It's the kind of dream only a big heart can hold. And honestly, it's the same heart that was big enough to take care of me, too. Over time, her dream became ours.
+            My wife has always had this huge, impossible-in-the-best-way dream — <em>give every cat in the world care.</em>
           </p>
 
           <p className="story-paragraph fade-in" style={{ transitionDelay: '0.15s' }}>
-            This started with a simple, daily ritual: my wife and I going on walks and hoping for cat sightings. On our walks and our drives, we look for our familiar faces — the <strong>window cats</strong> perched like tiny landlords, and the strays who slip through the neighborhood like little shadows.
+            One of our favorite things to do is a simple, daily ritual: going on walks and hoping for cat sightings. On our walks and our drives, we look for our familiar faces — the <strong>window cats</strong> perched like tiny landlords, and the strays who slip through the neighborhood like little shadows.
           </p>
 
           <div className="pull-quote fade-in" style={{ transitionDelay: '0.2s' }}>
-            "We've given them our own names — not because we think we 'own' them, but because we cared about our little neighbors."
+            "We've given each of them our own names because we cared about our little neighbors, and it's just the best thing when we happen upon them."
           </div>
 
           <p className="story-paragraph fade-in" style={{ transitionDelay: '0.25s' }}>
-            Of course, some already have homes and real names we had to think we may never learn, but that didn't stop them from being part of our daily story.
+            Of course, some already probably have homes and real names we didn't know — but that didn't stop them from being part of our daily story.
           </p>
 
           <div className="cat-divider fade-in" style={{ transitionDelay: '0.3s' }}>🐾 🐱 🐾</div>
 
           <p className="story-paragraph fade-in" style={{ transitionDelay: '0.35s' }}>
-            That's what this site is for. It's a place to <strong>enjoy cats together as a community</strong> — to tag a sighting, leave a comment like "I know him, too!" and share that tiny spark of joy that comes from noticing them.
+            That's what this site is for. It's a place to <strong>enjoy cats together as a community</strong> — to tag a sighting, leave a comment like <em>"I know him, too! I call him Acorn"</em> and share that tiny spark of joy that comes from noticing them.
           </p>
 
           <p className="story-paragraph fade-in" style={{ transitionDelay: '0.4s' }}>
-            It's also a way to gently turn love into care: helping neighbors coordinate, supporting TNR efforts, and looking out for the community cats so fewer are left behind. To share in the name and love of our little neighbor on the corner.
+            It's also a way to gently turn love into care: helping neighbors coordinate, supporting TNR efforts, and looking out for the community cats so fewer are left behind.
           </p>
 
           <p className="story-paragraph fade-in" style={{ transitionDelay: '0.45s' }}>
