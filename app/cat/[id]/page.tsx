@@ -505,7 +505,9 @@ export default function CatPage() {
   async function handleVote(name: string) {
     if (!user) return;
     setVoteSaving(true);
-    await supabase.from('name_votes').upsert({ cat_id: catId, user_id: user.id, suggested_name: name }, { onConflict: 'cat_id,user_id' });
+    // Delete existing vote first, then insert — avoids needing a unique constraint
+    await supabase.from('name_votes').delete().eq('cat_id', catId).eq('user_id', user.id);
+    await supabase.from('name_votes').insert({ cat_id: catId, user_id: user.id, suggested_name: name });
     setMyVote(name); await loadNameVotes(); setVoteSaving(false);
   }
 
