@@ -4,6 +4,7 @@
 export const dynamic = 'force-dynamic';
 
 import { useState, useEffect, useRef } from 'react';
+import { useParams } from 'next/navigation';
 import { supabase } from '../../../lib/supabase';
 import Navbar from '../../components/Navbar';
 
@@ -14,8 +15,8 @@ const typeConfig = {
   rescue: { emoji: '🚨', color: '#F44336', label: 'Rescue Organization' },
 };
 
-export default function OrgProfilePage({ params }) {
-  const orgId = params.id;
+export default function OrgProfilePage() {
+  const { id: orgId } = useParams();
   const [org, setOrg] = useState(null);
   const [cats, setCats] = useState([]);
   const [loading, setLoading] = useState(true);
