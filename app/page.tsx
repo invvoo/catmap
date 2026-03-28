@@ -179,7 +179,6 @@ export default function Home() {
     clearMarkers();
     const { data: cats, error } = await supabase.from('cats').select('*');
     if (error) { console.error(error); return; }
-    setAllCats(cats || []);
     // Fetch top voted names for cats with no owner
     const { data: votes } = await supabase.from('name_votes').select('cat_id, suggested_name');
     if (votes?.length) {
@@ -194,10 +193,27 @@ export default function Home() {
       });
       setTopVotedNames(top);
     }
-    catsDataRef.current = (cats || []).filter(c => typeof c.lat === 'number' && typeof c.lng === 'number' && !isNaN(c.lat) && !isNaN(c.lng));
+    // Fetch latest sighting per cat and use that location for the pin
+    const { data: sightings } = await supabase
+      .from('sightings')
+      .select('cat_id, lat, lng, created_at')
+      .not('lat', 'is', null)
+      .not('lng', 'is', null)
+      .order('created_at', { ascending: false });
+    const latestSighting: Record<string, { lat: number; lng: number }> = {};
+    (sightings || []).forEach(s => {
+      if (!latestSighting[s.cat_id]) latestSighting[s.cat_id] = { lat: s.lat, lng: s.lng };
+    });
+    const catsWithLocation = (cats || []).map(c => ({
+      ...c,
+      lat: latestSighting[c.id]?.lat ?? c.lat,
+      lng: latestSighting[c.id]?.lng ?? c.lng,
+    }));
+    catsDataRef.current = catsWithLocation.filter(c => typeof c.lat === 'number' && typeof c.lng === 'number' && !isNaN(c.lat) && !isNaN(c.lng));
     const bounds = mapInstanceRef.current?.getBounds();
-    if (bounds) setVisibleCount((cats || []).filter(c => bounds.contains({ lat: c.lat, lng: c.lng })).length);
-    await renderClusters(cats || []);
+    if (bounds) setVisibleCount(catsWithLocation.filter(c => bounds.contains({ lat: c.lat, lng: c.lng })).length);
+    setAllCats(catsWithLocation);
+    await renderClusters(catsWithLocation);
     reclusterRef.current = () => renderClusters();
   }, [clearMarkers]);
 
