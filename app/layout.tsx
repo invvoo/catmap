@@ -15,6 +15,17 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "CatMap",
   description: "Spot, track, and care for community cats in your neighborhood.",
+  openGraph: {
+    title: "CatMap",
+    description: "Spot, track, and care for community cats in your neighborhood.",
+    siteName: "CatMap",
+    type: "website",
+  },
+  twitter: {
+    card: "summary",
+    title: "CatMap",
+    description: "Spot, track, and care for community cats in your neighborhood.",
+  },
 };
 
 export default function RootLayout({
