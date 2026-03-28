@@ -14,15 +14,29 @@ const typeConfig = {
   rescue: { emoji: '🚨', color: '#F44336', label: 'Rescue Organization' },
 };
 
+function haversineKm(lat1, lng1, lat2, lng2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function fmtDist(km) {
+  if (km < 1) return `${Math.round(km * 1000)} m`;
+  return `${km.toFixed(1)} km`;
+}
+
 export default function OrgsPage() {
   const [orgs, setOrgs] = useState([]);
   const [catCounts, setCatCounts] = useState({});
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
+  const [sortBy, setSortBy] = useState<'name' | 'nearest'>('name');
+  const [userLoc, setUserLoc] = useState<{ lat: number; lng: number } | null>(null);
+  const [locLoading, setLocLoading] = useState(false);
 
-  useEffect(() => {
-    load();
-  }, []);
+  useEffect(() => { load(); }, []);
 
   async function load() {
     setLoading(true);
@@ -37,7 +51,27 @@ export default function OrgsPage() {
     setLoading(false);
   }
 
-  const filtered = filter === 'all' ? orgs : orgs.filter(o => o.type === filter);
+  function requestLocation() {
+    if (!navigator.geolocation) return;
+    setLocLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      pos => { setUserLoc({ lat: pos.coords.latitude, lng: pos.coords.longitude }); setLocLoading(false); setSortBy('nearest'); },
+      () => setLocLoading(false),
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  }
+
+  const withDist = orgs.map(o => ({
+    ...o,
+    _km: userLoc && o.lat && o.lng ? haversineKm(userLoc.lat, userLoc.lng, o.lat, o.lng) : null,
+  }));
+
+  const filtered = withDist
+    .filter(o => filter === 'all' || o.type === filter)
+    .sort((a, b) => {
+      if (sortBy === 'nearest' && a._km !== null && b._km !== null) return a._km - b._km;
+      return (a.name || '').localeCompare(b.name || '');
+    });
 
   return (
     <div style={{ minHeight: '100vh', background: '#f7f7f7', fontFamily: 'system-ui, sans-serif' }}>
@@ -55,16 +89,29 @@ export default function OrgsPage() {
         </a>
       </div>
 
-      <div style={{ maxWidth: 900, margin: '0 auto', padding: '24px 16px' }}>
+      <div style={{ maxWidth: 900, margin: '0 auto', padding: '20px 16px' }}>
 
-        {/* Filter tabs */}
-        <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
+        {/* Type filter tabs */}
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
           {[{ value: 'all', label: '🐱 All' }, ...Object.entries(typeConfig).map(([v, c]) => ({ value: v, label: `${c.emoji} ${c.label}` }))].map(tab => (
             <button key={tab.value} onClick={() => setFilter(tab.value)}
               style={{ padding: '7px 16px', borderRadius: 20, border: 'none', background: filter === tab.value ? '#3949ab' : 'white', color: filter === tab.value ? 'white' : '#555', fontWeight: 600, fontSize: 13, cursor: 'pointer', boxShadow: '0 1px 4px rgba(0,0,0,0.08)' }}>
               {tab.label}
             </button>
           ))}
+        </div>
+
+        {/* Sort controls */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 13, color: '#888', fontWeight: 600 }}>Sort:</span>
+          <button onClick={() => setSortBy('name')}
+            style={{ padding: '6px 14px', borderRadius: 20, border: 'none', background: sortBy === 'name' ? '#333' : '#eee', color: sortBy === 'name' ? 'white' : '#555', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+            🔤 A–Z
+          </button>
+          <button onClick={() => { if (userLoc) setSortBy('nearest'); else requestLocation(); }}
+            style={{ padding: '6px 14px', borderRadius: 20, border: 'none', background: sortBy === 'nearest' ? '#333' : '#eee', color: sortBy === 'nearest' ? 'white' : '#555', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+            {locLoading ? '📍 Getting location…' : '📍 Nearest'}
+          </button>
         </div>
 
         {loading ? (
@@ -81,7 +128,6 @@ export default function OrgsPage() {
               const count = catCounts[org.id] || 0;
               return (
                 <a key={org.id} href={`/orgs/${org.id}`} style={{ textDecoration: 'none', background: 'white', borderRadius: 14, overflow: 'hidden', border: '1px solid #eee', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column' }}>
-                  {/* Color bar */}
                   <div style={{ height: 6, background: color }} />
                   <div style={{ padding: '16px 18px 18px', display: 'flex', flexDirection: 'column', gap: 8, flex: 1 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -98,7 +144,10 @@ export default function OrgsPage() {
                     {org.phone && <div style={{ fontSize: 12, color: '#777' }}>📞 {org.phone}</div>}
                     <div style={{ fontSize: 12, color: '#888', marginTop: 'auto', paddingTop: 8, borderTop: '1px solid #f5f5f5', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <span>🐱 {count} cat{count !== 1 ? 's' : ''}</span>
-                      {org.verified && <span style={{ fontSize: 11, color: '#4CAF50', fontWeight: 600 }}>✅ Verified</span>}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        {org._km !== null && <span style={{ color: '#888', fontWeight: 600 }}>📍 {fmtDist(org._km)}</span>}
+                        {org.verified && <span style={{ fontSize: 11, color: '#4CAF50', fontWeight: 600 }}>✅ Verified</span>}
+                      </div>
                     </div>
                   </div>
                 </a>
