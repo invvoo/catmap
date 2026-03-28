@@ -177,13 +177,12 @@ export default function CatPage() {
       setUser(data.user);
       if (data.user) loadMyVote(data.user.id);
     });
-    loadCat();
+    loadCat().then(() => loadPhotoSocial());
     loadSightings();
     loadNameVotes();
     loadGallery();
     loadPosts();
     loadBounties();
-    loadPhotoSocial();
     loadLostMatches();
   }, [catId]);
 
@@ -241,6 +240,15 @@ export default function CatPage() {
     }
     setPhotoLikes(likeCounts);
     setMyLikes(liked);
+    // Auto-promote the most-liked photo to profile photo on load
+    const topEntry = Object.entries(likeCounts).sort((a, b) => b[1] - a[1])[0];
+    if (topEntry && topEntry[1] >= 1) {
+      const { data: catRow } = await supabase.from('cats').select('image_url').eq('id', catId).single();
+      if (catRow && topEntry[0] !== catRow.image_url) {
+        await supabase.from('cats').update({ image_url: topEntry[0] }).eq('id', catId);
+        setCat((prev: any) => prev ? { ...prev, image_url: topEntry[0] } : prev);
+      }
+    }
     // Enrich comments with profiles
     const commentsData = comments || [];
     if (commentsData.length > 0) {
@@ -271,7 +279,7 @@ export default function CatPage() {
       // Check if this photo should become the profile photo
       const updatedLikes = { ...photoLikes, [photoUrl]: (photoLikes[photoUrl] || 0) + 1 };
       const topUrl = Object.entries(updatedLikes).sort((a, b) => b[1] - a[1])[0]?.[0];
-      if (topUrl && topUrl !== cat.image_url && updatedLikes[topUrl] > 1) {
+      if (topUrl && topUrl !== cat.image_url && updatedLikes[topUrl] >= 1) {
         await supabase.from('cats').update({ image_url: topUrl }).eq('id', catId);
         setCat((prev: any) => ({ ...prev, image_url: topUrl }));
       }
@@ -790,7 +798,7 @@ export default function CatPage() {
   const isOwner = user?.id === cat.owner_id;
   const color = statusColors[cat.status] || '#888';
   const leadingName = nameVotes[0]?.suggested_name || null;
-  const displayName = cat.name && cat.name !== 'Unknown' ? cat.name : leadingName || 'Unknown';
+  const displayName = leadingName || (cat.name && cat.name !== 'Unknown' ? cat.name : 'Unknown');
   const lastSighting = sightings[0];
   const date = new Date(cat.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
   const allPhotos = [cat.image_url, ...galleryPhotos].filter(Boolean);
@@ -821,7 +829,7 @@ export default function CatPage() {
             <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
               <div>
                 <h1 style={{ margin: 0, fontSize: 30, fontWeight: 800, color: 'white', textShadow: '0 2px 8px rgba(0,0,0,0.4)' }}>{displayName}</h1>
-                {cat.name === 'Unknown' && leadingName && !isOwner && <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)', marginTop: 2 }}>community name · {nameVotes[0]?.count} votes</div>}
+                {showNameVote && leadingName && !isOwner && <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)', marginTop: 2 }}>community name · {nameVotes[0]?.count} votes</div>}
               </div>
               <span style={{ background: color, color: 'white', borderRadius: 20, padding: '5px 14px', fontSize: 13, fontWeight: 700 }}>
                 {statusEmoji[cat.status]} {cat.status}
@@ -1226,7 +1234,9 @@ export default function CatPage() {
 
             {isLost ? (
               <>
-                <button onClick={() => setShowFoundModal(true)} style={{ padding: 14, borderRadius: 10, border: '1px solid #4CAF50', background: 'white', color: '#4CAF50', fontSize: 15, fontWeight: 600, cursor: 'pointer' }}>✅ Mark as Found</button>
+                {isOwner && (
+                  <button onClick={() => setShowFoundModal(true)} style={{ padding: 14, borderRadius: 10, border: '1px solid #4CAF50', background: 'white', color: '#4CAF50', fontSize: 15, fontWeight: 600, cursor: 'pointer' }}>✅ Mark as Found</button>
+                )}
                 <button onClick={() => window.open(`/poster?catId=${cat.id}`, '_blank')} style={{ padding: 14, borderRadius: 10, border: '1px solid #111', background: 'white', fontSize: 15, cursor: 'pointer', fontWeight: 600 }}>🖨️ Generate Lost Poster</button>
               </>
             ) : (
