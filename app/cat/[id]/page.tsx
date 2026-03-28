@@ -142,6 +142,7 @@ export default function CatPage() {
 
   // Adopt modal
   const [showAdoptModal, setShowAdoptModal] = useState(false);
+  const [adoptNoOwner, setAdoptNoOwner] = useState(false);
 
   // Possible matches
   const [lostMatches, setLostMatches] = useState<any[]>([]);
@@ -737,15 +738,33 @@ export default function CatPage() {
   async function handleAdoptInterest() {
     if (!user) { window.location.href = '/login'; return; }
     setGpsLoading(true);
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        await supabase.from('sightings').insert({ cat_id: catId, user_id: user.id, lat: pos.coords.latitude, lng: pos.coords.longitude, note: '🏠 Interested in adopting this cat' });
-        setGpsLoading(false); setShowAdoptModal(false);
-        alert('Your interest has been noted! The community will be able to connect you with this cat.');
-      },
-      () => { setGpsLoading(false); },
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
+    try {
+      // Log interest as a sighting note
+      await supabase.from('sightings').insert({ cat_id: catId, user_id: user.id, lat: null, lng: null, note: '🏠 Interested in adopting this cat' });
+      if (cat.owner_id && cat.owner_id !== user.id) {
+        // Send message to owner
+        const catDisplayName = cat.name || 'your cat';
+        await supabase.from('messages').insert({
+          from_id: user.id,
+          to_id: cat.owner_id,
+          body: `Hi! I saw ${catDisplayName} on CatMap and I'm interested in adopting them. Would you be open to chatting?`,
+          cat_id: catId,
+        });
+        // Notify owner
+        fetch('/api/notify', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: cat.owner_id, catId, type: 'message', message: `💌 Someone is interested in adopting ${catDisplayName}!`, catName: catDisplayName }) });
+        setGpsLoading(false);
+        setShowAdoptModal(false);
+        window.location.href = '/messages';
+      } else {
+        // Stray — no owner to message
+        setGpsLoading(false);
+        setShowAdoptModal(false);
+        setAdoptNoOwner(true);
+      }
+    } catch (e) {
+      setGpsLoading(false);
+    }
   }
 
   if (loading) return (
@@ -1293,18 +1312,46 @@ export default function CatPage() {
 
       {/* ── ADOPT MODAL ── */}
       {showAdoptModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ background: 'white', borderRadius: 16, padding: 28, width: 340, boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
-            <h2 style={{ margin: '0 0 8px' }}>🏠 Interested in Adopting</h2>
-            <p style={{ color: '#555', fontSize: 14, margin: '0 0 20px', lineHeight: 1.6 }}>
-              Your interest will be logged and visible to the community. Someone who knows this cat may reach out. Your GPS location will be recorded.
-            </p>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '0 16px' }}>
+          <div style={{ background: 'white', borderRadius: 16, padding: 28, width: '100%', maxWidth: 360, boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+            <h2 style={{ margin: '0 0 8px', fontSize: 18 }}>🏠 Interested in Adopting</h2>
+            {cat.owner_id && cat.owner_id !== user?.id ? (
+              <p style={{ color: '#555', fontSize: 14, margin: '0 0 20px', lineHeight: 1.6 }}>
+                This will send a message to {cat.name || 'this cat'}'s owner and open a conversation so you can arrange the adoption.
+              </p>
+            ) : (
+              <p style={{ color: '#555', fontSize: 14, margin: '0 0 20px', lineHeight: 1.6 }}>
+                This cat doesn't have a listed owner yet. We'll log your interest and show you next steps.
+              </p>
+            )}
             <div style={{ display: 'flex', gap: 10 }}>
               <button onClick={() => setShowAdoptModal(false)} style={{ flex: 1, padding: 12, borderRadius: 8, border: '1px solid #ddd', background: 'white', cursor: 'pointer' }}>Cancel</button>
               <button onClick={handleAdoptInterest} disabled={gpsLoading} style={{ flex: 1, padding: 12, borderRadius: 8, border: 'none', background: '#4CAF50', color: 'white', cursor: 'pointer', fontWeight: 600 }}>
-                {gpsLoading ? 'Logging...' : "Yes, I'm Interested"}
+                {gpsLoading ? 'Sending...' : cat.owner_id && cat.owner_id !== user?.id ? '✉️ Message Owner' : "I'm Interested"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── ADOPT NO-OWNER NEXT STEPS ── */}
+      {adoptNoOwner && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '0 16px' }}>
+          <div style={{ background: 'white', borderRadius: 16, padding: 28, width: '100%', maxWidth: 360, boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+            <div style={{ fontSize: 36, textAlign: 'center', marginBottom: 10 }}>🐾</div>
+            <h2 style={{ margin: '0 0 8px', fontSize: 18, textAlign: 'center' }}>Interest Logged!</h2>
+            <p style={{ color: '#555', fontSize: 14, margin: '0 0 20px', lineHeight: 1.6, textAlign: 'center' }}>
+              {cat.name || 'This cat'} is a stray with no listed owner. Here's what you can do next:
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
+              <a href="/orgs" style={{ display: 'block', padding: '11px 16px', borderRadius: 10, background: '#e8f5e9', color: '#2e7d32', fontWeight: 700, fontSize: 14, textDecoration: 'none', textAlign: 'center' }}>
+                🏠 Find a local adoption center
+              </a>
+              <a href={`/bounties?cat=${catId}`} style={{ display: 'block', padding: '11px 16px', borderRadius: 10, background: '#fff3e0', color: '#e65100', fontWeight: 700, fontSize: 14, textDecoration: 'none', textAlign: 'center' }}>
+                💰 Post a bounty to help this cat
+              </a>
+            </div>
+            <button onClick={() => setAdoptNoOwner(false)} style={{ width: '100%', padding: 12, borderRadius: 8, border: '1px solid #ddd', background: 'white', cursor: 'pointer', fontWeight: 600 }}>Close</button>
           </div>
         </div>
       )}
