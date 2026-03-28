@@ -282,10 +282,12 @@ export default function CatPage() {
     setCommentSaving(true);
     const { data } = await supabase.from('cat_photo_comments').insert({
       cat_id: catId, photo_url: photoUrl, user_id: user.id, comment: newComment.trim(),
-    }).select('*, profiles(display_name,avatar_url)').single();
+    }).select('*').single();
     if (data) {
-      setLightboxComments(prev => [...prev, data]);
-      setPhotoComments(prev => ({ ...prev, [photoUrl]: [...(prev[photoUrl] || []), data] }));
+      const { data: prof } = await supabase.from('profiles').select('display_name,avatar_url').eq('id', user.id).maybeSingle();
+      const enriched = { ...data, profiles: prof || null };
+      setLightboxComments(prev => [...prev, enriched]);
+      setPhotoComments(prev => ({ ...prev, [photoUrl]: [...(prev[photoUrl] || []), enriched] }));
     }
     setNewComment('');
     setCommentSaving(false);
