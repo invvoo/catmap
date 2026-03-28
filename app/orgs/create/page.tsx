@@ -21,7 +21,11 @@ export default function CreateOrgPage() {
   const [form, setForm] = useState({
     name: '',
     type: 'adoption',
-    address: '',
+    street: '',
+    city: '',
+    state: '',
+    zip: '',
+    country: '',
     phone: '',
     website: '',
     description: '',
@@ -53,14 +57,15 @@ export default function CreateOrgPage() {
     e.preventDefault();
     setError('');
     if (!form.name.trim()) { setError('Organization name is required.'); return; }
-    if (!form.address.trim()) { setError('Full address is required to place your organization on the map.'); return; }
+    if (!form.street.trim() || !form.city.trim()) { setError('Street and city are required to place your organization on the map.'); return; }
 
     setLoading(true);
 
-    // Geocode the address
-    const geo = await geocodeAddress(form.address.trim());
+    // Build full address string for geocoding
+    const fullAddress = [form.street, form.city, form.state, form.zip, form.country].filter(Boolean).join(', ');
+    const geo = await geocodeAddress(fullAddress);
     if (!geo) {
-      setError('Could not find that address. Please enter a full address including city, state, and country.');
+      setError('Could not find that address. Please check the address and try again.');
       setLoading(false);
       return;
     }
@@ -68,7 +73,7 @@ export default function CreateOrgPage() {
     const { data, error: insertError } = await supabase.from('organizations').insert({
       name: form.name.trim(),
       type: form.type,
-      address: geo.formatted, // use the cleaned-up address from Google
+      address: geo.formatted,
       phone: form.phone.trim() || null,
       website: form.website.trim() || null,
       description: form.description.trim() || null,
@@ -112,15 +117,43 @@ export default function CreateOrgPage() {
               </select>
             </div>
 
+            {/* Address fields */}
             <div>
-              <label style={labelStyle}>Full Address *</label>
-              <input
-                style={inputStyle}
-                value={form.address}
-                onChange={e => set('address', e.target.value)}
-                placeholder="123 Main St, Brooklyn, NY 11201, USA"
-              />
-              <div style={{ fontSize: 11, color: '#aaa', marginTop: 5 }}>Include street, city, state, zip, and country. This is used to place your organization on the map.</div>
+              <label style={{ ...labelStyle, marginBottom: 10 }}>Address *</label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <input
+                  style={inputStyle}
+                  value={form.street}
+                  onChange={e => set('street', e.target.value)}
+                  placeholder="Street address"
+                />
+                <input
+                  style={inputStyle}
+                  value={form.city}
+                  onChange={e => set('city', e.target.value)}
+                  placeholder="City"
+                />
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <input
+                    style={inputStyle}
+                    value={form.state}
+                    onChange={e => set('state', e.target.value)}
+                    placeholder="State / Province"
+                  />
+                  <input
+                    style={inputStyle}
+                    value={form.zip}
+                    onChange={e => set('zip', e.target.value)}
+                    placeholder="ZIP / Postal code"
+                  />
+                </div>
+                <input
+                  style={inputStyle}
+                  value={form.country}
+                  onChange={e => set('country', e.target.value)}
+                  placeholder="Country"
+                />
+              </div>
             </div>
 
             <div>
