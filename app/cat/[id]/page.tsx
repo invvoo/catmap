@@ -63,10 +63,8 @@ function exactMatch(a?: string | null, b?: string | null): boolean {
 function scoreAttrs(a: any, b: any): { score: number; fields: string[] } {
   const fields: string[] = [];
   let score = 0;
-  // Exact coat match only — "black and white" must not match "black"
-  if (exactMatch(a?.coat, b?.coat)) { score += 10; fields.push('Coat & Pattern'); }
-  // Eye color as secondary differentiator
-  if (fuzzyMatch(a?.eyes, b?.eyes)) { score += 4; fields.push('Eyes'); }
+  // Only coat color/pattern — exact match required ("black and white" ≠ "black")
+  if (exactMatch(a?.coat, b?.coat)) { score += 10; fields.push('Coat & Color'); }
   return { score, fields };
 }
 
