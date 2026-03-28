@@ -158,6 +158,8 @@ export default function CatPage() {
   const [bountyDesc, setBountyDesc] = useState('');
   const [bountyDifficulty, setBountyDifficulty] = useState('standard');
   const [bountySaving, setBountySaving] = useState(false);
+  const [showBountyDonatePrompt, setShowBountyDonatePrompt] = useState(false);
+  const [newBountyId, setNewBountyId] = useState<string | null>(null);
 
   // Owner notes
   const [ownerNotes, setOwnerNotes] = useState('');
@@ -365,15 +367,17 @@ export default function CatPage() {
     await supabase.from('bounties').insert({
       cat_id: catId, posted_by: user.id, type: bountyType,
       difficulty: bountyDifficulty, status: 'open',
-      base_amount: policy.baseAmount, current_amount: policy.baseAmount + diffBonus,
+      base_amount: 0, current_amount: 0,
       max_amount: policy.maxAmount, community_boost: 0,
-      difficulty_bonus: diffBonus, escalation_paused: false,
+      difficulty_bonus: 0, escalation_paused: false,
       description: bountyDesc.trim() || null,
     });
+    const { data: inserted } = await supabase.from('bounties').select('id').eq('cat_id', catId).eq('posted_by', user.id).order('created_at', { ascending: false }).limit(1).single();
     setBountySaving(false);
     setShowPostBountyModal(false);
     setBountyDesc('');
     await loadBounties();
+    if (inserted?.id) { setNewBountyId(inserted.id); setShowBountyDonatePrompt(true); }
   }
 
   async function loadGallery() {
@@ -1156,10 +1160,14 @@ export default function CatPage() {
                       <div>
                         <span style={{ fontSize: 13, fontWeight: 700, color: policy.color }}>{policy.emoji} {policy.label}</span>
                         {b.description && <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{b.description}</div>}
+                        <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>Target payout: up to ${policy.maxAmount}</div>
                       </div>
                       <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: 18, fontWeight: 900, color: policy.color }}>${current.toFixed(2)}</div>
-                        <div style={{ fontSize: 10, color: '#bbb' }}>{b.status === 'claimed' ? '🔒 Claimed' : '🟢 Open'}</div>
+                        <div style={{ fontSize: 18, fontWeight: 900, color: (b.community_boost || 0) > 0 ? policy.color : '#bbb' }}>
+                          ${(b.community_boost || 0).toFixed(2)}
+                        </div>
+                        <div style={{ fontSize: 10, color: '#bbb' }}>{(b.community_boost || 0) > 0 ? 'funded' : 'not yet funded'}</div>
+                        <div style={{ fontSize: 10, color: '#bbb', marginTop: 1 }}>{b.status === 'claimed' ? '🔒 Claimed' : '🟢 Open'}</div>
                       </div>
                     </div>
                   </a>
@@ -1463,7 +1471,29 @@ export default function CatPage() {
 
             <button onClick={handlePostBounty} disabled={bountySaving}
               style={{ width: '100%', padding: 14, borderRadius: 12, border: 'none', background: BOUNTY_TYPES[bountyType].color, color: 'white', fontWeight: 700, fontSize: 16, cursor: 'pointer', opacity: bountySaving ? 0.7 : 1 }}>
-              {bountySaving ? 'Posting…' : `🐾 Post ${BOUNTY_TYPES[bountyType].label} Bounty ($${BOUNTY_TYPES[bountyType].baseAmount})`}
+              {bountySaving ? 'Posting…' : `🐾 Post ${BOUNTY_TYPES[bountyType].label} Bounty`}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── BOUNTY DONATE PROMPT ── */}
+      {showBountyDonatePrompt && newBountyId && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100, padding: 20 }}>
+          <div style={{ background: 'white', borderRadius: 16, padding: 28, maxWidth: 360, width: '100%', textAlign: 'center' }}>
+            <div style={{ fontSize: 36, marginBottom: 12 }}>🎉</div>
+            <div style={{ fontSize: 17, fontWeight: 700, color: '#222', marginBottom: 8 }}>Bounty posted!</div>
+            <div style={{ fontSize: 14, color: '#666', marginBottom: 20, lineHeight: 1.5 }}>
+              Would you like to contribute money to this bounty? Your donation funds the payout when someone completes the task.
+            </div>
+            <a href={`/bounties/${newBountyId}`}
+              style={{ display: 'block', width: '100%', padding: 13, borderRadius: 10, border: 'none', background: '#FF6B6B', color: 'white', fontWeight: 700, fontSize: 15, cursor: 'pointer', textDecoration: 'none', marginBottom: 10, boxSizing: 'border-box' }}
+              onClick={() => setShowBountyDonatePrompt(false)}>
+              💛 Yes, add my contribution
+            </a>
+            <button onClick={() => setShowBountyDonatePrompt(false)}
+              style={{ width: '100%', padding: 12, borderRadius: 10, border: '1px solid #ddd', background: 'white', color: '#888', fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
+              No thanks, post without funding
             </button>
           </div>
         </div>
