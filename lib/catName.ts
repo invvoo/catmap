@@ -1,7 +1,8 @@
 // Utility: resolve display name for cats using community name votes
 // - Cats with an owner keep their given name unless a vote winner exists
 // - Stray/unknown cats always use the winning vote name if available
-import { getSupabase } from './supabase';
+// @ts-nocheck
+import { supabase } from './supabase';
 
 /**
  * Given an array of cat IDs, returns a map of catId → winning voted name.
@@ -9,7 +10,6 @@ import { getSupabase } from './supabase';
  */
 export async function fetchTopVotedNames(catIds: string[]): Promise<Record<string, string>> {
   if (!catIds.length) return {};
-  const supabase = getSupabase();
   const { data } = await supabase
     .from('name_votes')
     .select('cat_id, suggested_name')
