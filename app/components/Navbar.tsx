@@ -71,6 +71,10 @@ export default function Navbar() {
         @media (max-width: 640px) {
           .catmap-nav-links { display: none !important; }
           .catmap-met-btn { font-size: 12px !important; padding: 7px 10px !important; }
+          .catmap-menu-btn { display: flex !important; }
+        }
+        @media (min-width: 641px) {
+          .catmap-menu-btn { display: none !important; }
         }
       `}</style>
       <div style={{ flexShrink: 0, background: 'white', padding: '10px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 2px 10px rgba(0,0,0,0.08)', zIndex: 100, position: 'sticky', top: 0 }}>
@@ -102,6 +106,12 @@ export default function Navbar() {
             </>
           )}
         </div>
+
+        {/* Mobile-only Menu button */}
+        <button className="catmap-menu-btn" onClick={() => setShowHomeMenu(v => !v)}
+          style={{ display: 'none', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 8, border: 'none', background: showHomeMenu ? '#f5f5f5' : 'transparent', fontWeight: 700, fontSize: 13, color: '#333', cursor: 'pointer' }}>
+          ☰ Menu
+        </button>
 
         {/* Desktop links */}
         <div className="catmap-nav-links" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
