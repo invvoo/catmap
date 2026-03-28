@@ -579,9 +579,27 @@ export default function Home() {
         </div>
         <div className="catmap-feed-cards" style={{ flex: 1, overflowX: 'auto', overflowY: 'hidden', display: 'flex', alignItems: 'flex-start', padding: '6px 12px 8px', gap: 10 }}>
           {feedCats.length === 0 ? (
-            <div style={{ display: 'flex', alignItems: 'center', color: '#ccc', fontSize: 13, whiteSpace: 'nowrap', paddingLeft: 4 }}>
-              {userLocation ? 'No cats spotted within 2 miles yet 🐾' : 'Loading...'}
-            </div>
+            (() => {
+              if (!userLocation || allCats.length === 0) {
+                return <div style={{ display: 'flex', alignItems: 'center', color: '#ccc', fontSize: 13, whiteSpace: 'nowrap', paddingLeft: 4 }}>Loading...</div>;
+              }
+              const nearest = allCats
+                .map(c => ({ ...c, _dist: distanceFeet(userLocation.lat, userLocation.lng, c.lat, c.lng) }))
+                .sort((a, b) => a._dist - b._dist)[0];
+              const nearestName = (!nearest.name || nearest.name === 'Unknown') ? (topVotedNames[nearest.id] || 'Unknown') : nearest.name;
+              const miles = distanceMiles(nearest._dist);
+              return (
+                <div onClick={() => handleFeedCardClick(nearest)}
+                  style={{ flexShrink: 0, width: 160, height: 160, cursor: 'pointer', background: '#fafafa', borderRadius: 10, overflow: 'hidden', border: '1px dashed #ddd', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 12px', gap: 6, textAlign: 'center' }}>
+                  <div style={{ fontSize: 28 }}>🗺️</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#888' }}>No cats within 2 mi</div>
+                  <div style={{ fontSize: 11, color: '#aaa', lineHeight: 1.4 }}>
+                    Nearest cat is <strong style={{ color: '#555' }}>{nearestName}</strong>, {miles} away
+                  </div>
+                  <div style={{ fontSize: 10, color: '#FF6B6B', fontWeight: 700 }}>Tap to go there →</div>
+                </div>
+              );
+            })()
           ) : (
             feedCats.map(cat => {
               const color = statusColors[cat.status] || '#888';
