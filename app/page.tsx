@@ -447,7 +447,7 @@ export default function Home() {
         </div>
         {/* Mobile-only Menu button */}
         <button className="catmap-menu-btn" onClick={() => setShowHomeMenu(v => !v)}
-          style={{ display: 'none', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 8, border: '1.5px solid #eee', background: showHomeMenu ? '#f5f5f5' : 'white', fontWeight: 700, fontSize: 13, color: '#333', cursor: 'pointer' }}>
+          style={{ display: 'none', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 8, border: 'none', background: showHomeMenu ? '#f5f5f5' : 'transparent', fontWeight: 700, fontSize: 13, color: '#333', cursor: 'pointer' }}>
           ☰ Menu
         </button>
 
