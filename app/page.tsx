@@ -48,6 +48,40 @@ function createCatMarkerElement(cat) {
   return container;
 }
 
+function createOrgMarkerElement(org, catCount) {
+  const typeConfig = {
+    adoption: { emoji: '🏠', color: '#4CAF50' },
+    vet: { emoji: '🏥', color: '#2196F3' },
+    pound: { emoji: '🏛️', color: '#FF9800' },
+    rescue: { emoji: '🚨', color: '#F44336' },
+  };
+  const { emoji, color } = typeConfig[org.type] || { emoji: '🐱', color: '#9C27B0' };
+  const wrapper = document.createElement('div');
+  wrapper.style.cssText = `position:relative;display:flex;flex-direction:column;align-items:center;cursor:pointer;`;
+  const badge = document.createElement('div');
+  badge.style.cssText = `width:64px;height:64px;border-radius:12px;border:3px solid ${color};background:white;display:flex;flex-direction:column;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.25);overflow:hidden;`;
+  if (org.logo_url) {
+    const img = document.createElement('img');
+    img.src = org.logo_url;
+    img.style.cssText = 'width:100%;height:100%;object-fit:cover;';
+    badge.appendChild(img);
+  } else {
+    const em = document.createElement('span');
+    em.textContent = emoji;
+    em.style.cssText = 'font-size:26px;line-height:1;';
+    badge.appendChild(em);
+  }
+  const count = document.createElement('div');
+  count.style.cssText = `position:absolute;top:-6px;right:-6px;background:${color};color:white;border-radius:10px;padding:1px 6px;font-size:11px;font-weight:800;font-family:system-ui,sans-serif;`;
+  count.textContent = `${catCount}`;
+  const tri = document.createElement('div');
+  tri.style.cssText = `width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:7px solid ${color};margin-top:1px;`;
+  wrapper.appendChild(badge);
+  wrapper.appendChild(count);
+  wrapper.appendChild(tri);
+  return wrapper;
+}
+
 function MapPopup({ cat, pixelPos, onClose, userLocation, mapRef }) {
   const color = statusColors[cat.status] || '#888';
   const dist = userLocation ? distanceFeet(userLocation.lat, userLocation.lng, cat.lat, cat.lng) : null;
@@ -86,11 +120,15 @@ export default function Home() {
   const clustererRef = useRef(null);
   const catsDataRef = useRef([]);
   const reclusterRef = useRef(null);
+  const orgMarkersRef = useRef([]);
+  const orgsRef = useRef([]);
 
   const [showForm, setShowForm] = useState(false);
   const [formPos, setFormPos] = useState(null);
   const [selectedCat, setSelectedCat] = useState(null);
   const [popupPixel, setPopupPixel] = useState(null);
+  const [selectedOrg, setSelectedOrg] = useState(null);
+  const [selectedOrgCatCount, setSelectedOrgCatCount] = useState(0);
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -153,6 +191,8 @@ export default function Home() {
     if (clustererRef.current) { clustererRef.current.clearMarkers(); clustererRef.current = null; }
     markersRef.current.forEach(m => { m.map = null; });
     markersRef.current = [];
+    orgMarkersRef.current.forEach(m => m.map = null);
+    orgMarkersRef.current = [];
   }, []);
 
   function latLngToPixel(lat, lng) {
@@ -212,11 +252,42 @@ export default function Home() {
       // Bake display name in — voted name wins if cat has no owner name
       name: (!c.name || c.name === 'Unknown') ? (topVoted[c.id] || 'Unknown') : c.name,
     }));
-    catsDataRef.current = catsWithLocation.filter(c => typeof c.lat === 'number' && typeof c.lng === 'number' && !isNaN(c.lat) && !isNaN(c.lng));
+    // Fetch organizations
+    const { data: orgs } = await supabase.from('organizations').select('*').not('lat', 'is', null).not('lng', 'is', null);
+    orgsRef.current = orgs || [];
+
+    // Split cats into org cats and individual cats
+    const orgCatCounts = {};
+    catsWithLocation.forEach(c => { if (c.organization_id) orgCatCounts[c.organization_id] = (orgCatCounts[c.organization_id] || 0) + 1; });
+    const individualCats = catsWithLocation.filter(c => !c.organization_id);
+
+    catsDataRef.current = individualCats.filter(c => typeof c.lat === 'number' && typeof c.lng === 'number' && !isNaN(c.lat) && !isNaN(c.lng));
     const bounds = mapInstanceRef.current?.getBounds();
-    if (bounds) setVisibleCount(catsWithLocation.filter(c => bounds.contains({ lat: c.lat, lng: c.lng })).length);
-    setAllCats(catsWithLocation);
-    await renderClusters(catsWithLocation);
+    if (bounds) setVisibleCount(individualCats.filter(c => bounds.contains({ lat: c.lat, lng: c.lng })).length);
+    setAllCats(individualCats);
+    await renderClusters(individualCats);
+
+    // Render org markers
+    const map = mapInstanceRef.current;
+    const AdvancedMarkerElement = window.google?.maps?.marker?.AdvancedMarkerElement;
+    if (map && AdvancedMarkerElement) {
+      (orgs || []).forEach(org => {
+        const catCount = orgCatCounts[org.id] || 0;
+        const marker = new AdvancedMarkerElement({
+          position: { lat: org.lat, lng: org.lng },
+          title: org.name,
+          content: createOrgMarkerElement(org, catCount),
+          map,
+        });
+        marker.addListener('click', () => {
+          setSelectedOrg(org);
+          setSelectedOrgCatCount(catCount);
+          setSelectedCat(null);
+        });
+        orgMarkersRef.current.push(marker);
+      });
+    }
+
     reclusterRef.current = () => renderClusters();
   }, [clearMarkers]);
 
@@ -358,6 +429,8 @@ export default function Home() {
                   onMouseEnter={e => (e.currentTarget.style.background = '#f9f9f9')} onMouseLeave={e => (e.currentTarget.style.background = 'white')}>💛 Funds</a>
                 <a href="/care" onClick={() => setShowHomeMenu(false)} style={{ display: 'block', padding: '11px 16px', fontSize: 13, fontWeight: 600, color: '#333', textDecoration: 'none', borderBottom: '1px solid #f5f5f5' }}
                   onMouseEnter={e => (e.currentTarget.style.background = '#f9f9f9')} onMouseLeave={e => (e.currentTarget.style.background = 'white')}>🐾 Care for Strays</a>
+                <a href="/orgs" onClick={() => setShowHomeMenu(false)} style={{ display: 'block', padding: '11px 16px', fontSize: 13, fontWeight: 600, color: '#333', textDecoration: 'none', borderBottom: '1px solid #f5f5f5' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = '#f9f9f9')} onMouseLeave={e => (e.currentTarget.style.background = 'white')}>🏢 Organizations</a>
                 <a href="/about" onClick={() => setShowHomeMenu(false)} style={{ display: 'block', padding: '11px 16px', fontSize: 13, fontWeight: 600, color: '#333', textDecoration: 'none' }}
                   onMouseEnter={e => (e.currentTarget.style.background = '#f9f9f9')} onMouseLeave={e => (e.currentTarget.style.background = 'white')}>ℹ️ About</a>
               </div>
@@ -373,6 +446,8 @@ export default function Home() {
             onMouseEnter={e => (e.currentTarget.style.background = '#f5f5f5')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>💛 Funds</a>
           <a href="/care" style={{ fontSize: 13, fontWeight: 600, color: '#444', textDecoration: 'none', padding: '6px 12px', borderRadius: 8 }}
             onMouseEnter={e => (e.currentTarget.style.background = '#f5f5f5')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>🐾 Care for Strays</a>
+          <a href="/orgs" style={{ fontSize: 13, fontWeight: 600, color: '#444', textDecoration: 'none', padding: '6px 12px', borderRadius: 8 }}
+            onMouseEnter={e => (e.currentTarget.style.background = '#f5f5f5')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>🏢 Organizations</a>
           <a href="/about" style={{ fontSize: 13, fontWeight: 600, color: '#444', textDecoration: 'none', padding: '6px 12px', borderRadius: 8 }}
             onMouseEnter={e => (e.currentTarget.style.background = '#f5f5f5')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>About</a>
         </div>
@@ -423,6 +498,39 @@ export default function Home() {
         <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
         {selectedCat && popupPixel && (
           <MapPopup cat={selectedCat} pixelPos={popupPixel} onClose={() => { setSelectedCat(null); setPopupPixel(null); }} userLocation={userLocation} mapRef={mapRef} />
+        )}
+        {selectedOrg && (
+          <>
+            <div onClick={() => setSelectedOrg(null)} style={{ position: 'absolute', inset: 0, zIndex: 199 }} />
+            <div style={{ position: 'absolute', left: '50%', top: 16, transform: 'translateX(-50%)', width: 280, zIndex: 200, background: 'white', borderRadius: 14, boxShadow: '0 8px 32px rgba(0,0,0,0.22)', border: '1px solid #eee', overflow: 'hidden' }}>
+              {(() => {
+                const typeConfig = { adoption: { emoji: '🏠', color: '#4CAF50', label: 'Adoption' }, vet: { emoji: '🏥', color: '#2196F3', label: 'Vet' }, pound: { emoji: '🏛️', color: '#FF9800', label: 'Pound' }, rescue: { emoji: '🚨', color: '#F44336', label: 'Rescue' } };
+                const { emoji, color, label } = typeConfig[selectedOrg.type] || { emoji: '🐱', color: '#9C27B0', label: selectedOrg.type };
+                return (
+                  <>
+                    <div style={{ background: color, padding: '16px 16px 12px', display: 'flex', alignItems: 'center', gap: 12 }}>
+                      {selectedOrg.logo_url
+                        ? <img src={selectedOrg.logo_url} style={{ width: 52, height: 52, borderRadius: 10, objectFit: 'cover', border: '2px solid rgba(255,255,255,0.5)' }} />
+                        : <div style={{ width: 52, height: 52, borderRadius: 10, background: 'rgba(255,255,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28 }}>{emoji}</div>
+                      }
+                      <div>
+                        <div style={{ fontSize: 15, fontWeight: 800, color: 'white', marginBottom: 2 }}>{selectedOrg.name}</div>
+                        <span style={{ fontSize: 11, fontWeight: 700, background: 'rgba(255,255,255,0.25)', color: 'white', borderRadius: 8, padding: '2px 8px' }}>{emoji} {label}</span>
+                      </div>
+                    </div>
+                    <div style={{ padding: '12px 16px' }}>
+                      {selectedOrg.address && <div style={{ fontSize: 12, color: '#555', marginBottom: 5 }}>📍 {selectedOrg.address}</div>}
+                      {selectedOrg.phone && <div style={{ fontSize: 12, color: '#555', marginBottom: 5 }}>📞 {selectedOrg.phone}</div>}
+                      {selectedOrg.website && <div style={{ fontSize: 12, marginBottom: 5 }}><a href={selectedOrg.website} target="_blank" rel="noreferrer" style={{ color: '#2196F3', textDecoration: 'none' }}>🌐 Website</a></div>}
+                      <div style={{ fontSize: 12, color: '#888', marginBottom: 10 }}>🐱 {selectedOrgCatCount} cat{selectedOrgCatCount !== 1 ? 's' : ''} listed</div>
+                      <a href={`/orgs/${selectedOrg.id}`} style={{ display: 'block', padding: '7px 0', borderRadius: 8, background: color, color: 'white', fontWeight: 700, fontSize: 13, textAlign: 'center', textDecoration: 'none' }}>View Organization</a>
+                    </div>
+                  </>
+                );
+              })()}
+              <button onClick={() => setSelectedOrg(null)} style={{ position: 'absolute', top: 8, right: 8, background: 'rgba(0,0,0,0.3)', border: 'none', borderRadius: '50%', width: 22, height: 22, color: 'white', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+            </div>
+          </>
         )}
       </div>
 
