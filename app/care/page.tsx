@@ -20,7 +20,7 @@ export default function CarePage() {
           }
         });
       },
-      { threshold: 0.1, rootMargin: '-80px 0px -60% 0px' }
+      { threshold: 0, rootMargin: '0px' }
     );
     const els = sectionsRef.current?.querySelectorAll('[data-section]');
     els?.forEach((el) => observer.observe(el));
@@ -77,7 +77,7 @@ export default function CarePage() {
         .toc-item.active { color: #1e1810; font-weight: 500; border-left-color: #7a9e7e; }
 
         .content { padding-top: 8px; }
-        .section { margin-bottom: 72px; opacity: 0; transform: translateY(20px); transition: opacity 0.6s ease, transform 0.6s ease; }
+        .section { margin-bottom: 72px; opacity: 0; transform: translateY(16px); transition: opacity 0.5s ease, transform 0.5s ease; }
         .section-eyebrow { font-size: 10px; font-weight: 600; letter-spacing: 3px; text-transform: uppercase; color: #7a9e7e; margin-bottom: 12px; }
         .section-title { font-family: 'Fraunces', serif; font-size: clamp(22px, 3vw, 30px); font-weight: 700; line-height: 1.15; letter-spacing: -0.8px; color: #1e1810; margin-bottom: 16px; }
         .section-intro { font-size: 15px; line-height: 1.75; color: #5a4e3e; margin-bottom: 24px; font-weight: 300; }

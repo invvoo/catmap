@@ -367,7 +367,7 @@ export default function AddCatForm({ lat, lng, onClose, onSaved }: AddCatFormPro
     if (error) { setSightingError('Failed to log sighting: ' + error.message); }
     else {
       supabase.rpc('increment_trust_score', { uid: user.id, pts: 1 });
-      onSaved(); onClose(); window.location.href = `/cat/${selectedMatchId}`;
+      onSaved(); window.location.href = `/cat/${selectedMatchId}`;
     }
   }
 
@@ -405,7 +405,7 @@ export default function AddCatForm({ lat, lng, onClose, onSaved }: AddCatFormPro
         .filter(cat => cat.distance <= MATCH_RADIUS && !matchIds.has(cat.id))
         .sort((a, b) => b.matchScore - a.matchScore || a.distance - b.distance);
 
-      if (lost.length > 0 || matches.length > 0 || allMatches.length > 0) {
+      if (lost.length > 0 || matches.length > 0) {
         setLostMatches(lost);
         setSaveMatches(matches);
         setAllSaveMatches(allMatches);
@@ -440,7 +440,8 @@ export default function AddCatForm({ lat, lng, onClose, onSaved }: AddCatFormPro
     if (error) { alert('Error saving cat: ' + error.message); }
     else {
       supabase.rpc('increment_trust_score', { uid: user.id, pts: 2 });
-      onSaved(); onClose(); if (inserted?.id) window.location.href = `/cat/${inserted.id}`;
+      onSaved();
+      if (inserted?.id) { window.location.href = `/cat/${inserted.id}`; } else { onClose(); }
     }
     setSaving(false);
   }
