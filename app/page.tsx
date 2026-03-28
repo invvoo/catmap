@@ -410,6 +410,10 @@ export default function Home() {
           .catmap-navbar { padding: 8px 12px !important; }
           .catmap-navbar-links { display: none !important; }
           .catmap-met-btn { font-size: 12px !important; padding: 7px 12px !important; }
+          .catmap-menu-btn { display: flex !important; }
+        }
+        @media (min-width: 641px) {
+          .catmap-menu-btn { display: none !important; }
         }
       `}</style>
 
@@ -441,6 +445,12 @@ export default function Home() {
             </>
           )}
         </div>
+        {/* Mobile-only Menu button */}
+        <button className="catmap-menu-btn" onClick={() => setShowHomeMenu(v => !v)}
+          style={{ display: 'none', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 8, border: '1.5px solid #eee', background: showHomeMenu ? '#f5f5f5' : 'white', fontWeight: 700, fontSize: 13, color: '#333', cursor: 'pointer' }}>
+          ☰ Menu
+        </button>
+
         <div className="catmap-navbar-links" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <a href="/lost" style={{ fontSize: 13, fontWeight: 600, color: '#F44336', textDecoration: 'none', padding: '6px 12px', borderRadius: 8 }}
             onMouseEnter={e => (e.currentTarget.style.background = '#f5f5f5')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>🚨 Lost Kitties</a>
