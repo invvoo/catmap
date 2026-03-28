@@ -6,6 +6,7 @@ export const dynamic = 'force-dynamic';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { supabase } from '../../../lib/supabase';
+import { fetchTopVotedNames, resolveDisplayName } from '../../../lib/catName';
 import Navbar from '../../components/Navbar';
 
 const ROLES = {
@@ -47,6 +48,7 @@ export default function ProfilePage() {
   const [isOwn, setIsOwn] = useState(false);
   const [loading, setLoading] = useState(true);
   const [cats, setCats] = useState([]);
+  const [topVoted, setTopVoted] = useState<Record<string, string>>({});
   const [sightingCount, setSightingCount] = useState(0);
   const [postCount, setPostCount] = useState(0);
   const [editing, setEditing] = useState(false);
@@ -82,8 +84,13 @@ export default function ProfilePage() {
       supabase.from('sightings').select('id, lat, lng, photo_url, created_at, cat_id, cats(id, name, image_url)').eq('user_id', profileId).not('lat', 'is', null).not('lng', 'is', null),
       supabase.from('cat_posts').select('id', { count: 'exact' }).eq('user_id', profileId),
     ]);
-    setCats(catsRes.data || []);
+    const catsData = catsRes.data || [];
+    setCats(catsData);
     const sightingData = sightingsRes.data || [];
+    // Fetch voted names for all cats (owned + sighted)
+    const allCatIds = [...new Set([...catsData.map(c => c.id), ...sightingData.map(s => s.cats?.id).filter(Boolean)])];
+    const tv = await fetchTopVotedNames(allCatIds);
+    setTopVoted(tv);
     setSightingCount(sightingData.length);
     // Keep only the latest sighting per cat for the map
     const latestByCat = Object.values(
@@ -125,7 +132,8 @@ export default function ProfilePage() {
         : '<span style="font-size:16px;">🐱</span>';
       const marker = new window.google.maps.marker.AdvancedMarkerElement({ map, position: { lat: s.lat, lng: s.lng }, content: pin });
       marker.addListener('click', () => {
-        infoWindow.setContent(`<div style="font-size:13px;font-weight:600;padding:4px 2px"><a href="/cat/${s.cats?.id}" style="color:#FF6B6B;text-decoration:none">🐱 ${s.cats?.name || 'Unknown cat'}</a><br/><span style="font-size:11px;color:#aaa;font-weight:400">${new Date(s.created_at).toLocaleDateString()}</span></div>`);
+        const catDisplayName = s.cats ? (topVoted[s.cats.id] || s.cats.name || 'Unknown cat') : 'Unknown cat';
+        infoWindow.setContent(`<div style="font-size:13px;font-weight:600;padding:4px 2px"><a href="/cat/${s.cats?.id}" style="color:#FF6B6B;text-decoration:none">🐱 ${catDisplayName}</a><br/><span style="font-size:11px;color:#aaa;font-weight:400">${new Date(s.created_at).toLocaleDateString()}</span></div>`);
         infoWindow.open(map, marker);
       });
     });
@@ -287,11 +295,11 @@ export default function ProfilePage() {
                 <a key={cat.id} href={`/cat/${cat.id}`}
                   style={{ display: 'flex', alignItems: 'center', gap: 12, textDecoration: 'none', padding: '8px', borderRadius: 10, border: '1px solid #f5f5f5', background: '#fafafa' }}>
                   {cat.image_url
-                    ? <img src={cat.image_url} alt={cat.name} style={{ width: 48, height: 48, borderRadius: 8, objectFit: 'cover', objectPosition: '50% 20%', flexShrink: 0 }} />
+                    ? <img src={cat.image_url} alt={resolveDisplayName(cat, topVoted)} style={{ width: 48, height: 48, borderRadius: 8, objectFit: 'cover', objectPosition: '50% 20%', flexShrink: 0 }} />
                     : <div style={{ width: 48, height: 48, borderRadius: 8, background: statusColors[cat.status] || '#eee', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>🐱</div>
                   }
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 700, fontSize: 14, color: '#111', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cat.name}</div>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: '#111', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{resolveDisplayName(cat, topVoted)}</div>
                     <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 8, background: statusColors[cat.status] || '#eee', color: 'white' }}>{statusEmoji[cat.status]} {cat.status}</span>
                   </div>
                   <div style={{ fontSize: 11, color: '#bbb', flexShrink: 0 }}>{timeAgo(cat.created_at)}</div>

@@ -1,27 +1,8 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
 import Navbar from '../components/Navbar';
 
 export default function AboutPage() {
-  const paragraphsRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            (entry.target as HTMLElement).style.opacity = '1';
-            (entry.target as HTMLElement).style.transform = 'translateY(0)';
-          }
-        });
-      },
-      { threshold: 0.15 }
-    );
-    const els = paragraphsRef.current?.querySelectorAll('.fade-in');
-    els?.forEach((el) => observer.observe(el));
-    return () => observer.disconnect();
-  }, []);
 
   return (
     <>
@@ -81,12 +62,6 @@ export default function AboutPage() {
           max-width: 780px;
           margin: 0 auto;
           padding: 0 40px 120px;
-        }
-
-        .fade-in {
-          opacity: 0;
-          transform: translateY(24px);
-          transition: opacity 0.7s ease, transform 0.7s ease;
         }
 
         .story-paragraph {
@@ -192,39 +167,39 @@ export default function AboutPage() {
           <div className="hero-rule" />
         </div>
 
-        <div className="content" ref={paragraphsRef}>
+        <div className="content">
 
-          <p className="story-paragraph fade-in" style={{ transitionDelay: '0.1s' }}>
+          <p className="story-paragraph">
             My wife has always had this huge, impossible-in-the-best-way dream — <em>give every cat in the world care.</em>
           </p>
 
-          <p className="story-paragraph fade-in" style={{ transitionDelay: '0.15s' }}>
+          <p className="story-paragraph">
             One of our favorite things to do is a simple, daily ritual: going on walks and hoping for cat sightings. On our walks and our drives, we look for our familiar faces — the <strong>window cats</strong> perched like tiny landlords, and the strays who slip through the neighborhood like little shadows.
           </p>
 
-          <div className="pull-quote fade-in" style={{ transitionDelay: '0.2s' }}>
+          <div className="pull-quote">
             "We've given each of them our own names because we cared about our little neighbors, and it's just the best thing when we happen upon them."
           </div>
 
-          <p className="story-paragraph fade-in" style={{ transitionDelay: '0.25s' }}>
+          <p className="story-paragraph">
             Of course, some already probably have homes and real names we didn't know — but that didn't stop them from being part of our daily story.
           </p>
 
-          <div className="cat-divider fade-in" style={{ transitionDelay: '0.3s' }}>🐾 🐱 🐾</div>
+          <div className="cat-divider">🐾 🐱 🐾</div>
 
-          <p className="story-paragraph fade-in" style={{ transitionDelay: '0.35s' }}>
+          <p className="story-paragraph">
             That's what this site is for. It's a place to <strong>enjoy cats together as a community</strong> — to tag a sighting, leave a comment like <em>"I know him, too! I call him Acorn"</em> and share that tiny spark of joy that comes from noticing them.
           </p>
 
-          <p className="story-paragraph fade-in" style={{ transitionDelay: '0.4s' }}>
+          <p className="story-paragraph">
             It's also a way to gently turn love into care: helping neighbors coordinate, supporting TNR efforts, and looking out for the community cats so fewer are left behind.
           </p>
 
-          <p className="story-paragraph fade-in" style={{ transitionDelay: '0.45s' }}>
+          <p className="story-paragraph">
             Because dreams don't come true all at once. Sometimes they come true <em>one walk at a time</em> — one cat, one sighting, one small act of care, together.
           </p>
 
-          <div className="footer-cta fade-in" style={{ transitionDelay: '0.5s' }}>
+          <div className="footer-cta">
             <p className="footer-cta-text">
               "To share in the love of our little neighbor on the corner."
             </p>

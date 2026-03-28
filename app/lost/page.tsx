@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic';
 
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
+import { fetchTopVotedNames, resolveDisplayName } from '../../lib/catName';
 import Navbar from '../components/Navbar';
 
 function timeAgo(d: string) {
@@ -19,6 +20,7 @@ function timeAgo(d: string) {
 
 export default function LostPage() {
   const [cats, setCats] = useState<any[]>([]);
+  const [topVoted, setTopVoted] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
 
@@ -31,15 +33,19 @@ export default function LostPage() {
       .select('*')
       .eq('status', 'lost')
       .order('created_at', { ascending: false });
-    setCats(data || []);
+    const catsData = data || [];
+    setCats(catsData);
+    const tv = await fetchTopVotedNames(catsData.map(c => c.id));
+    setTopVoted(tv);
     setLoading(false);
   }
 
   const filtered = cats.filter(c => {
     if (!search.trim()) return true;
     const q = search.toLowerCase();
+    const displayName = resolveDisplayName(c, topVoted);
     return (
-      c.name?.toLowerCase().includes(q) ||
+      displayName.toLowerCase().includes(q) ||
       c.description?.toLowerCase().includes(q) ||
       c.attributes?.coat?.toLowerCase().includes(q) ||
       c.attributes?.color?.toLowerCase().includes(q)
@@ -96,7 +102,7 @@ export default function LostPage() {
                       {/* Photo */}
                       <div style={{ position: 'relative', height: 180, background: '#111' }}>
                         {cat.image_url
-                          ? <img src={cat.image_url} alt={cat.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                          ? <img src={cat.image_url} alt={resolveDisplayName(cat, topVoted)} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                           : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 60, background: '#f5f5f5' }}>🐱</div>
                         }
                         <div style={{ position: 'absolute', top: 10, left: 10, background: '#F44336', color: 'white', fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 20 }}>
@@ -107,7 +113,7 @@ export default function LostPage() {
                       {/* Info */}
                       <div style={{ padding: '14px 16px 16px' }}>
                         <div style={{ fontWeight: 800, fontSize: 17, color: '#222', marginBottom: 4 }}>
-                          {cat.name && cat.name !== 'Unknown' ? cat.name : 'Unknown name'}
+                          {resolveDisplayName(cat, topVoted)}
                         </div>
                         {details && (
                           <div style={{ fontSize: 12, color: '#888', marginBottom: 6 }}>{details}</div>

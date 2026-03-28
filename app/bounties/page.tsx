@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic';
 
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
+import { fetchTopVotedNames, resolveDisplayName } from '../../lib/catName';
 import Navbar from '../components/Navbar';
 import { BOUNTY_TYPES, calcCurrentAmount, BountyType } from '../../lib/bountyPolicy';
 
@@ -19,6 +20,7 @@ function timeAgo(d: string) {
 
 export default function BountiesPage() {
   const [bounties, setBounties] = useState<any[]>([]);
+  const [topVoted, setTopVoted] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('all');
   const [user, setUser] = useState<any>(null);
@@ -32,10 +34,14 @@ export default function BountiesPage() {
     setLoading(true);
     const { data } = await supabase
       .from('bounties')
-      .select('*, cats(name, image_url, lat, lng)')
+      .select('*, cats(id, name, image_url, lat, lng)')
       .in('status', ['open', 'claimed'])
       .order('created_at', { ascending: false });
-    setBounties(data || []);
+    const bountiesData = data || [];
+    setBounties(bountiesData);
+    const catIds = bountiesData.map(b => b.cats?.id).filter(Boolean);
+    const tv = await fetchTopVotedNames(catIds);
+    setTopVoted(tv);
     setLoading(false);
   }
 
@@ -89,7 +95,7 @@ export default function BountiesPage() {
 
                     {/* Cat photo strip */}
                     {b.cats?.image_url ? (
-                      <img src={b.cats.image_url} alt={b.cats?.name} style={{ width: '100%', height: 120, objectFit: 'cover', display: 'block' }} />
+                      <img src={b.cats.image_url} alt={b.cats ? resolveDisplayName(b.cats, topVoted) : ''} style={{ width: '100%', height: 120, objectFit: 'cover', display: 'block' }} />
                     ) : (
                       <div style={{ width: '100%', height: 80, background: `${policy.color}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 36 }}>{policy.emoji}</div>
                     )}
@@ -109,7 +115,7 @@ export default function BountiesPage() {
                       </div>
 
                       <div style={{ fontWeight: 700, fontSize: 15, color: '#222', marginBottom: 4 }}>
-                        {b.cats?.name || 'Community Cat'}
+                        {b.cats ? resolveDisplayName(b.cats, topVoted) : 'Community Cat'}
                       </div>
                       {b.description && (
                         <div style={{ fontSize: 12, color: '#888', marginBottom: 10, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{b.description}</div>
