@@ -176,13 +176,12 @@ export default function CatPage() {
       setUser(data.user);
       if (data.user) loadMyVote(data.user.id);
     });
-    loadCat();
+    loadCat().then(() => loadPhotoSocial());
     loadSightings();
     loadNameVotes();
     loadGallery();
     loadPosts();
     loadBounties();
-    loadPhotoSocial();
     loadLostMatches();
   }, [catId]);
 
@@ -780,7 +779,7 @@ export default function CatPage() {
   const isOwner = user?.id === cat.owner_id;
   const color = statusColors[cat.status] || '#888';
   const leadingName = nameVotes[0]?.suggested_name || null;
-  const displayName = (showNameVote && leadingName) ? leadingName : (cat.name && cat.name !== 'Unknown' ? cat.name : 'Unknown');
+  const displayName = leadingName || (cat.name && cat.name !== 'Unknown' ? cat.name : 'Unknown');
   const lastSighting = sightings[0];
   const date = new Date(cat.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
   const allPhotos = [cat.image_url, ...galleryPhotos].filter(Boolean);
