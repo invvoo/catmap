@@ -48,6 +48,40 @@ function createCatMarkerElement(cat) {
   return container;
 }
 
+function createOrgMarkerElement(org, catCount) {
+  const typeConfig = {
+    adoption: { emoji: '🏠', color: '#4CAF50' },
+    vet: { emoji: '🏥', color: '#2196F3' },
+    pound: { emoji: '🏛️', color: '#FF9800' },
+    rescue: { emoji: '🚨', color: '#F44336' },
+  };
+  const { emoji, color } = typeConfig[org.type] || { emoji: '🐱', color: '#9C27B0' };
+  const wrapper = document.createElement('div');
+  wrapper.style.cssText = `position:relative;display:flex;flex-direction:column;align-items:center;cursor:pointer;`;
+  const badge = document.createElement('div');
+  badge.style.cssText = `width:64px;height:64px;border-radius:12px;border:3px solid ${color};background:white;display:flex;flex-direction:column;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.25);overflow:hidden;`;
+  if (org.logo_url) {
+    const img = document.createElement('img');
+    img.src = org.logo_url;
+    img.style.cssText = 'width:100%;height:100%;object-fit:cover;';
+    badge.appendChild(img);
+  } else {
+    const em = document.createElement('span');
+    em.textContent = emoji;
+    em.style.cssText = 'font-size:26px;line-height:1;';
+    badge.appendChild(em);
+  }
+  const count = document.createElement('div');
+  count.style.cssText = `position:absolute;top:-6px;right:-6px;background:${color};color:white;border-radius:10px;padding:1px 6px;font-size:11px;font-weight:800;font-family:system-ui,sans-serif;`;
+  count.textContent = `${catCount}`;
+  const tri = document.createElement('div');
+  tri.style.cssText = `width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:7px solid ${color};margin-top:1px;`;
+  wrapper.appendChild(badge);
+  wrapper.appendChild(count);
+  wrapper.appendChild(tri);
+  return wrapper;
+}
+
 function MapPopup({ cat, pixelPos, onClose, userLocation, mapRef }) {
   const color = statusColors[cat.status] || '#888';
   const dist = userLocation ? distanceFeet(userLocation.lat, userLocation.lng, cat.lat, cat.lng) : null;
@@ -86,11 +120,15 @@ export default function Home() {
   const clustererRef = useRef(null);
   const catsDataRef = useRef([]);
   const reclusterRef = useRef(null);
+  const orgMarkersRef = useRef([]);
+  const orgsRef = useRef([]);
 
   const [showForm, setShowForm] = useState(false);
   const [formPos, setFormPos] = useState(null);
   const [selectedCat, setSelectedCat] = useState(null);
   const [popupPixel, setPopupPixel] = useState(null);
+  const [selectedOrg, setSelectedOrg] = useState(null);
+  const [selectedOrgCatCount, setSelectedOrgCatCount] = useState(0);
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -153,6 +191,8 @@ export default function Home() {
     if (clustererRef.current) { clustererRef.current.clearMarkers(); clustererRef.current = null; }
     markersRef.current.forEach(m => { m.map = null; });
     markersRef.current = [];
+    orgMarkersRef.current.forEach(m => m.map = null);
+    orgMarkersRef.current = [];
   }, []);
 
   function latLngToPixel(lat, lng) {
@@ -179,25 +219,75 @@ export default function Home() {
     clearMarkers();
     const { data: cats, error } = await supabase.from('cats').select('*');
     if (error) { console.error(error); return; }
-    setAllCats(cats || []);
     // Fetch top voted names for cats with no owner
+    // Build top voted name map
     const { data: votes } = await supabase.from('name_votes').select('cat_id, suggested_name');
+    const topVoted: Record<string, string> = {};
     if (votes?.length) {
       const counts: Record<string, Record<string, number>> = {};
       votes.forEach(({ cat_id, suggested_name }) => {
         if (!counts[cat_id]) counts[cat_id] = {};
         counts[cat_id][suggested_name] = (counts[cat_id][suggested_name] || 0) + 1;
       });
-      const top: Record<string, string> = {};
       Object.entries(counts).forEach(([catId, names]) => {
-        top[catId] = Object.entries(names).sort((a, b) => b[1] - a[1])[0][0];
+        topVoted[catId] = Object.entries(names).sort((a, b) => b[1] - a[1])[0][0];
       });
-      setTopVotedNames(top);
+      setTopVotedNames(topVoted);
     }
-    catsDataRef.current = (cats || []).filter(c => typeof c.lat === 'number' && typeof c.lng === 'number' && !isNaN(c.lat) && !isNaN(c.lng));
+    // Fetch latest sighting per cat and use that location for the pin
+    const { data: sightings } = await supabase
+      .from('sightings')
+      .select('cat_id, lat, lng, created_at')
+      .not('lat', 'is', null)
+      .not('lng', 'is', null)
+      .order('created_at', { ascending: false });
+    const latestSighting: Record<string, { lat: number; lng: number }> = {};
+    (sightings || []).forEach(s => {
+      if (!latestSighting[s.cat_id]) latestSighting[s.cat_id] = { lat: s.lat, lng: s.lng };
+    });
+    const catsWithLocation = (cats || []).map(c => ({
+      ...c,
+      lat: latestSighting[c.id]?.lat ?? c.lat,
+      lng: latestSighting[c.id]?.lng ?? c.lng,
+      // Bake display name in — voted name wins if cat has no owner name
+      name: (!c.name || c.name === 'Unknown') ? (topVoted[c.id] || 'Unknown') : c.name,
+    }));
+    // Fetch organizations
+    const { data: orgs } = await supabase.from('organizations').select('*').not('lat', 'is', null).not('lng', 'is', null);
+    orgsRef.current = orgs || [];
+
+    // Split cats into org cats and individual cats
+    const orgCatCounts = {};
+    catsWithLocation.forEach(c => { if (c.organization_id) orgCatCounts[c.organization_id] = (orgCatCounts[c.organization_id] || 0) + 1; });
+    const individualCats = catsWithLocation.filter(c => !c.organization_id);
+
+    catsDataRef.current = individualCats.filter(c => typeof c.lat === 'number' && typeof c.lng === 'number' && !isNaN(c.lat) && !isNaN(c.lng));
     const bounds = mapInstanceRef.current?.getBounds();
-    if (bounds) setVisibleCount((cats || []).filter(c => bounds.contains({ lat: c.lat, lng: c.lng })).length);
-    await renderClusters(cats || []);
+    if (bounds) setVisibleCount(individualCats.filter(c => bounds.contains({ lat: c.lat, lng: c.lng })).length);
+    setAllCats(individualCats);
+    await renderClusters(individualCats);
+
+    // Render org markers
+    const map = mapInstanceRef.current;
+    const AdvancedMarkerElement = window.google?.maps?.marker?.AdvancedMarkerElement;
+    if (map && AdvancedMarkerElement) {
+      (orgs || []).forEach(org => {
+        const catCount = orgCatCounts[org.id] || 0;
+        const marker = new AdvancedMarkerElement({
+          position: { lat: org.lat, lng: org.lng },
+          title: org.name,
+          content: createOrgMarkerElement(org, catCount),
+          map,
+        });
+        marker.addListener('click', () => {
+          setSelectedOrg(org);
+          setSelectedOrgCatCount(catCount);
+          setSelectedCat(null);
+        });
+        orgMarkersRef.current.push(marker);
+      });
+    }
+
     reclusterRef.current = () => renderClusters();
   }, [clearMarkers]);
 
@@ -335,8 +425,12 @@ export default function Home() {
                   onMouseEnter={e => (e.currentTarget.style.background = '#f9f9f9')} onMouseLeave={e => (e.currentTarget.style.background = 'white')}>🚨 Lost Kitties</a>
                 <a href="/bounties" onClick={() => setShowHomeMenu(false)} style={{ display: 'block', padding: '11px 16px', fontSize: 13, fontWeight: 600, color: '#333', textDecoration: 'none', borderBottom: '1px solid #f5f5f5' }}
                   onMouseEnter={e => (e.currentTarget.style.background = '#f9f9f9')} onMouseLeave={e => (e.currentTarget.style.background = 'white')}>💰 Bounties</a>
+                <a href="/funds" onClick={() => setShowHomeMenu(false)} style={{ display: 'block', padding: '11px 16px', fontSize: 13, fontWeight: 600, color: '#333', textDecoration: 'none', borderBottom: '1px solid #f5f5f5' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = '#f9f9f9')} onMouseLeave={e => (e.currentTarget.style.background = 'white')}>💛 Funds</a>
                 <a href="/care" onClick={() => setShowHomeMenu(false)} style={{ display: 'block', padding: '11px 16px', fontSize: 13, fontWeight: 600, color: '#333', textDecoration: 'none', borderBottom: '1px solid #f5f5f5' }}
                   onMouseEnter={e => (e.currentTarget.style.background = '#f9f9f9')} onMouseLeave={e => (e.currentTarget.style.background = 'white')}>🐾 Care for Strays</a>
+                <a href="/orgs" onClick={() => setShowHomeMenu(false)} style={{ display: 'block', padding: '11px 16px', fontSize: 13, fontWeight: 600, color: '#333', textDecoration: 'none', borderBottom: '1px solid #f5f5f5' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = '#f9f9f9')} onMouseLeave={e => (e.currentTarget.style.background = 'white')}>🏢 Organizations</a>
                 <a href="/about" onClick={() => setShowHomeMenu(false)} style={{ display: 'block', padding: '11px 16px', fontSize: 13, fontWeight: 600, color: '#333', textDecoration: 'none' }}
                   onMouseEnter={e => (e.currentTarget.style.background = '#f9f9f9')} onMouseLeave={e => (e.currentTarget.style.background = 'white')}>ℹ️ About</a>
               </div>
@@ -348,8 +442,12 @@ export default function Home() {
             onMouseEnter={e => (e.currentTarget.style.background = '#f5f5f5')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>🚨 Lost Kitties</a>
           <a href="/bounties" style={{ fontSize: 13, fontWeight: 600, color: '#444', textDecoration: 'none', padding: '6px 12px', borderRadius: 8 }}
             onMouseEnter={e => (e.currentTarget.style.background = '#f5f5f5')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>💰 Bounties</a>
+          <a href="/funds" style={{ fontSize: 13, fontWeight: 600, color: '#444', textDecoration: 'none', padding: '6px 12px', borderRadius: 8 }}
+            onMouseEnter={e => (e.currentTarget.style.background = '#f5f5f5')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>💛 Funds</a>
           <a href="/care" style={{ fontSize: 13, fontWeight: 600, color: '#444', textDecoration: 'none', padding: '6px 12px', borderRadius: 8 }}
             onMouseEnter={e => (e.currentTarget.style.background = '#f5f5f5')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>🐾 Care for Strays</a>
+          <a href="/orgs" style={{ fontSize: 13, fontWeight: 600, color: '#444', textDecoration: 'none', padding: '6px 12px', borderRadius: 8 }}
+            onMouseEnter={e => (e.currentTarget.style.background = '#f5f5f5')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>🏢 Organizations</a>
           <a href="/about" style={{ fontSize: 13, fontWeight: 600, color: '#444', textDecoration: 'none', padding: '6px 12px', borderRadius: 8 }}
             onMouseEnter={e => (e.currentTarget.style.background = '#f5f5f5')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>About</a>
         </div>
@@ -400,6 +498,39 @@ export default function Home() {
         <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
         {selectedCat && popupPixel && (
           <MapPopup cat={selectedCat} pixelPos={popupPixel} onClose={() => { setSelectedCat(null); setPopupPixel(null); }} userLocation={userLocation} mapRef={mapRef} />
+        )}
+        {selectedOrg && (
+          <>
+            <div onClick={() => setSelectedOrg(null)} style={{ position: 'absolute', inset: 0, zIndex: 199 }} />
+            <div style={{ position: 'absolute', left: '50%', top: 16, transform: 'translateX(-50%)', width: 280, zIndex: 200, background: 'white', borderRadius: 14, boxShadow: '0 8px 32px rgba(0,0,0,0.22)', border: '1px solid #eee', overflow: 'hidden' }}>
+              {(() => {
+                const typeConfig = { adoption: { emoji: '🏠', color: '#4CAF50', label: 'Adoption' }, vet: { emoji: '🏥', color: '#2196F3', label: 'Vet' }, pound: { emoji: '🏛️', color: '#FF9800', label: 'Pound' }, rescue: { emoji: '🚨', color: '#F44336', label: 'Rescue' } };
+                const { emoji, color, label } = typeConfig[selectedOrg.type] || { emoji: '🐱', color: '#9C27B0', label: selectedOrg.type };
+                return (
+                  <>
+                    <div style={{ background: color, padding: '16px 16px 12px', display: 'flex', alignItems: 'center', gap: 12 }}>
+                      {selectedOrg.logo_url
+                        ? <img src={selectedOrg.logo_url} style={{ width: 52, height: 52, borderRadius: 10, objectFit: 'cover', border: '2px solid rgba(255,255,255,0.5)' }} />
+                        : <div style={{ width: 52, height: 52, borderRadius: 10, background: 'rgba(255,255,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28 }}>{emoji}</div>
+                      }
+                      <div>
+                        <div style={{ fontSize: 15, fontWeight: 800, color: 'white', marginBottom: 2 }}>{selectedOrg.name}</div>
+                        <span style={{ fontSize: 11, fontWeight: 700, background: 'rgba(255,255,255,0.25)', color: 'white', borderRadius: 8, padding: '2px 8px' }}>{emoji} {label}</span>
+                      </div>
+                    </div>
+                    <div style={{ padding: '12px 16px' }}>
+                      {selectedOrg.address && <div style={{ fontSize: 12, color: '#555', marginBottom: 5 }}>📍 {selectedOrg.address}</div>}
+                      {selectedOrg.phone && <div style={{ fontSize: 12, color: '#555', marginBottom: 5 }}>📞 {selectedOrg.phone}</div>}
+                      {selectedOrg.website && <div style={{ fontSize: 12, marginBottom: 5 }}><a href={selectedOrg.website} target="_blank" rel="noreferrer" style={{ color: '#2196F3', textDecoration: 'none' }}>🌐 Website</a></div>}
+                      <div style={{ fontSize: 12, color: '#888', marginBottom: 10 }}>🐱 {selectedOrgCatCount} cat{selectedOrgCatCount !== 1 ? 's' : ''} listed</div>
+                      <a href={`/orgs/${selectedOrg.id}`} style={{ display: 'block', padding: '7px 0', borderRadius: 8, background: color, color: 'white', fontWeight: 700, fontSize: 13, textAlign: 'center', textDecoration: 'none' }}>View Organization</a>
+                    </div>
+                  </>
+                );
+              })()}
+              <button onClick={() => setSelectedOrg(null)} style={{ position: 'absolute', top: 8, right: 8, background: 'rgba(0,0,0,0.3)', border: 'none', borderRadius: '50%', width: 22, height: 22, color: 'white', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+            </div>
+          </>
         )}
       </div>
 
