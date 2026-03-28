@@ -6,6 +6,7 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { MarkerClusterer, SuperClusterAlgorithm } from '@googlemaps/markerclusterer';
 import { supabase } from '../lib/supabase';
+import { fetchTopVotedNames } from '../lib/catName';
 import AddCatForm from './components/AddCatForm';
 
 const statusColors = { stray: '#FF9800', community: '#4CAF50', lost: '#F44336', homed: '#2196F3' };
@@ -219,21 +220,9 @@ export default function Home() {
     clearMarkers();
     const { data: cats, error } = await supabase.from('cats').select('*');
     if (error) { console.error(error); return; }
-    // Fetch top voted names for cats with no owner
-    // Build top voted name map
-    const { data: votes } = await supabase.from('name_votes').select('cat_id, suggested_name');
-    const topVoted: Record<string, string> = {};
-    if (votes?.length) {
-      const counts: Record<string, Record<string, number>> = {};
-      votes.forEach(({ cat_id, suggested_name }) => {
-        if (!counts[cat_id]) counts[cat_id] = {};
-        counts[cat_id][suggested_name] = (counts[cat_id][suggested_name] || 0) + 1;
-      });
-      Object.entries(counts).forEach(([catId, names]) => {
-        topVoted[catId] = Object.entries(names).sort((a, b) => b[1] - a[1])[0][0];
-      });
-      setTopVotedNames(topVoted);
-    }
+    // Fetch top voted names (voted name always wins as display name)
+    const topVoted = await fetchTopVotedNames((cats || []).map(c => c.id));
+    setTopVotedNames(topVoted);
     // Fetch latest sighting per cat and use that location for the pin
     const { data: sightings } = await supabase
       .from('sightings')
@@ -249,8 +238,8 @@ export default function Home() {
       ...c,
       lat: latestSighting[c.id]?.lat ?? c.lat,
       lng: latestSighting[c.id]?.lng ?? c.lng,
-      // Bake display name in — voted name wins if cat has no owner name
-      name: (!c.name || c.name === 'Unknown') ? (topVoted[c.id] || 'Unknown') : c.name,
+      // Bake display name — voted name always wins
+      name: topVoted[c.id] || c.name || 'Unknown',
     }));
     // Fetch organizations
     const { data: orgs } = await supabase.from('organizations').select('*').not('lat', 'is', null).not('lng', 'is', null);

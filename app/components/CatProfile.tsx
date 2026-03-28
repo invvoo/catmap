@@ -113,7 +113,7 @@ export default function CatProfile({ cat, onClose, onStatusChange }: CatProfileP
   }
 
   async function loadNameVotes() {
-    const { data } = await supabase.from('cat_name_votes').select('suggested_name').eq('cat_id', currentCat.id);
+    const { data } = await supabase.from('name_votes').select('suggested_name').eq('cat_id', currentCat.id);
     if (!data) return;
     const counts: Record<string, number> = {};
     data.forEach(({ suggested_name }) => { counts[suggested_name] = (counts[suggested_name] || 0) + 1; });
@@ -121,7 +121,7 @@ export default function CatProfile({ cat, onClose, onStatusChange }: CatProfileP
   }
 
   async function loadMyVote(userId: string) {
-    const { data } = await supabase.from('cat_name_votes').select('suggested_name')
+    const { data } = await supabase.from('name_votes').select('suggested_name')
       .eq('cat_id', currentCat.id).eq('user_id', userId).maybeSingle();
     if (data) setMyVote(data.suggested_name);
   }
@@ -129,7 +129,7 @@ export default function CatProfile({ cat, onClose, onStatusChange }: CatProfileP
   async function handleVote(name: string) {
     if (!user) return;
     setVoteSaving(true);
-    const { error } = await supabase.from('cat_name_votes').upsert(
+    const { error } = await supabase.from('name_votes').upsert(
       { cat_id: currentCat.id, user_id: user.id, suggested_name: name },
       { onConflict: 'cat_id,user_id' }
     );

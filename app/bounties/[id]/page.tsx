@@ -51,14 +51,29 @@ export default function BountyDetailPage() {
   const [myVote, setMyVote] = useState<string | null>(null);
   const [voting, setVoting] = useState(false);
 
+  // Fund request
+  const [showFundModal, setShowFundModal] = useState(false);
+  const [funds, setFunds] = useState<any[]>([]);
+  const [selectedFundId, setSelectedFundId] = useState('');
+  const [requestAmount, setRequestAmount] = useState('');
+  const [requestReason, setRequestReason] = useState('');
+  const [fundRequestLoading, setFundRequestLoading] = useState(false);
+  const [fundRequestSuccess, setFundRequestSuccess] = useState(false);
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUser(data.user));
     load();
+    loadFunds();
     // Check for donation success
     if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('donated')) {
       window.history.replaceState({}, '', `/bounties/${id}`);
     }
   }, [id]);
+
+  async function loadFunds() {
+    const { data } = await supabase.from('community_funds').select('id, name, balance').order('name');
+    setFunds(data || []);
+  }
 
   async function load() {
     setLoading(true);
@@ -177,6 +192,27 @@ export default function BountyDetailPage() {
     setBoostLoading(false);
   }
 
+  async function handleFundRequest() {
+    if (!user) { window.location.href = '/login'; return; }
+    const amt = parseFloat(requestAmount);
+    if (!selectedFundId || !amt || amt < 1 || !requestReason.trim()) return;
+    setFundRequestLoading(true);
+    const { error } = await supabase.from('fund_disbursements').insert({
+      fund_id: selectedFundId,
+      requested_by: user.id,
+      amount: amt,
+      reason: requestReason.trim(),
+      bounty_id: bounty.id,
+      cat_id: cat?.id || null,
+      status: 'pending',
+    });
+    setFundRequestLoading(false);
+    if (!error) {
+      setFundRequestSuccess(true);
+      setTimeout(() => { setShowFundModal(false); setFundRequestSuccess(false); setRequestAmount(''); setRequestReason(''); setSelectedFundId(''); }, 2500);
+    }
+  }
+
   if (loading) return (
     <div style={{ minHeight: '100vh', background: '#f7f7f7', fontFamily: 'system-ui, sans-serif' }}>
       <Navbar />
@@ -278,8 +314,14 @@ export default function BountyDetailPage() {
               )}
               <button onClick={() => setShowBoostModal(true)}
                 style={{ padding: '12px 20px', borderRadius: 10, border: `2px solid ${policy.color}`, background: 'white', color: policy.color, fontWeight: 700, fontSize: 15, cursor: 'pointer' }}>
-                💰 Boost
+                💰 Fund Bounty
               </button>
+              {user && (
+                <button onClick={() => setShowFundModal(true)}
+                  style={{ padding: '12px 20px', borderRadius: 10, border: '2px solid #4CAF50', background: 'white', color: '#2E7D32', fontWeight: 700, fontSize: 15, cursor: 'pointer' }}>
+                  🏦 Request from Fund
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -453,10 +495,10 @@ export default function BountyDetailPage() {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 1000 }}>
           <div style={{ background: 'white', borderRadius: '20px 20px 0 0', padding: '28px 24px', paddingBottom: 'calc(36px + env(safe-area-inset-bottom))', width: '100%', maxWidth: 480 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <h2 style={{ margin: 0, fontSize: 20 }}>💰 Boost This Bounty</h2>
+              <h2 style={{ margin: 0, fontSize: 20 }}>💰 Fund This Bounty</h2>
               <button onClick={() => setShowBoostModal(false)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#aaa' }}>✕</button>
             </div>
-            <p style={{ fontSize: 13, color: '#888', margin: '0 0 20px' }}>Add money to increase the payout and attract help faster.</p>
+            <p style={{ fontSize: 13, color: '#888', margin: '0 0 20px' }}>Contribute money to increase the payout and attract help faster. 100% goes to the person who completes this bounty.</p>
             <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
               {BOOST_AMOUNTS.map(a => (
                 <button key={a} onClick={() => { setBoostAmount(a); setCustomBoost(''); }}
@@ -472,6 +514,66 @@ export default function BountyDetailPage() {
               style={{ width: '100%', padding: 14, borderRadius: 12, border: 'none', background: policy.color, color: 'white', fontWeight: 700, fontSize: 16, cursor: 'pointer', opacity: boostLoading ? 0.7 : 1 }}>
               {boostLoading ? 'Redirecting to payment…' : `💳 Boost by $${customBoost || boostAmount}`}
             </button>
+          </div>
+        </div>
+      )}
+      {/* ── FUND REQUEST MODAL ── */}
+      {showFundModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: 'white', borderRadius: '20px 20px 0 0', padding: '28px 24px', paddingBottom: 'calc(36px + env(safe-area-inset-bottom))', width: '100%', maxWidth: 480, maxHeight: '90dvh', overflowY: 'auto' }}>
+
+            {fundRequestSuccess ? (
+              <div style={{ textAlign: 'center', padding: '32px 0' }}>
+                <div style={{ fontSize: 52, marginBottom: 12 }}>✅</div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: '#222' }}>Request submitted!</div>
+                <div style={{ fontSize: 14, color: '#888', marginTop: 6 }}>Fund managers will review your request and approve if eligible.</div>
+              </div>
+            ) : (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <h2 style={{ margin: 0, fontSize: 20 }}>🏦 Request from Fund Pool</h2>
+                  <button onClick={() => setShowFundModal(false)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#aaa' }}>✕</button>
+                </div>
+                <p style={{ fontSize: 13, color: '#888', margin: '0 0 20px', lineHeight: 1.5 }}>
+                  Ask a community fund to cover this bounty's payout or related costs. Fund managers will review and approve your request.
+                </p>
+
+                {funds.length === 0 ? (
+                  <div style={{ background: '#f9f9f9', borderRadius: 10, padding: '20px', textAlign: 'center', color: '#aaa', fontSize: 13, marginBottom: 16 }}>
+                    No community funds available yet.<br />
+                    <a href="/funds" style={{ color: '#4CAF50', textDecoration: 'none', fontWeight: 600 }}>View Funds →</a>
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#333', marginBottom: 8 }}>Select Fund *</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+                      {funds.map(f => (
+                        <div key={f.id} onClick={() => setSelectedFundId(f.id)}
+                          style={{ padding: '12px 14px', borderRadius: 10, border: `2px solid ${selectedFundId === f.id ? '#4CAF50' : '#eee'}`, background: selectedFundId === f.id ? '#E8F5E9' : 'white', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontWeight: 600, fontSize: 14, color: '#333' }}>{f.name}</span>
+                          <span style={{ fontSize: 13, color: '#4CAF50', fontWeight: 700 }}>${(f.balance || 0).toFixed(2)} available</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#333', marginBottom: 8 }}>Amount Requested ($) *</div>
+                    <input type="number" value={requestAmount} onChange={e => setRequestAmount(e.target.value)} placeholder="e.g. 25"
+                      style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1.5px solid #ddd', fontSize: 15, boxSizing: 'border-box', outline: 'none', marginBottom: 16 }} />
+
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#333', marginBottom: 8 }}>Reason for Request *</div>
+                    <textarea value={requestReason} onChange={e => setRequestReason(e.target.value)}
+                      placeholder="Explain why this bounty qualifies for fund support (e.g. stray medical care, TNR costs, rescue supplies)..."
+                      style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1.5px solid #ddd', fontSize: 13, boxSizing: 'border-box', outline: 'none', resize: 'vertical', minHeight: 90, fontFamily: 'inherit', marginBottom: 20 }} />
+
+                    <button onClick={handleFundRequest}
+                      disabled={fundRequestLoading || !selectedFundId || !requestAmount || !requestReason.trim()}
+                      style={{ width: '100%', padding: 14, borderRadius: 12, border: 'none', background: (!selectedFundId || !requestAmount || !requestReason.trim()) ? '#ddd' : '#4CAF50', color: (!selectedFundId || !requestAmount || !requestReason.trim()) ? '#aaa' : 'white', fontWeight: 700, fontSize: 16, cursor: (!selectedFundId || !requestAmount || !requestReason.trim()) ? 'default' : 'pointer', opacity: fundRequestLoading ? 0.7 : 1 }}>
+                      {fundRequestLoading ? 'Submitting…' : '🏦 Submit Fund Request'}
+                    </button>
+                  </>
+                )}
+              </>
+            )}
           </div>
         </div>
       )}
