@@ -207,10 +207,18 @@ export default function CatPage() {
   }, [cat?.id, sightings.length]);
 
   async function loadNameVotes() {
-    const { data } = await supabase.from('cat_name_votes').select('suggested_name').eq('cat_id', catId);
+    const [{ data }, { data: catData }] = await Promise.all([
+      supabase.from('cat_name_votes').select('suggested_name').eq('cat_id', catId),
+      supabase.from('cats').select('name').eq('id', catId).single(),
+    ]);
     if (!data) return;
     const counts: Record<string, number> = {};
     data.forEach(({ suggested_name }) => { counts[suggested_name] = (counts[suggested_name] || 0) + 1; });
+    // Include the original upload name as a vote option
+    const uploadName = catData?.name;
+    if (uploadName && uploadName !== 'Unknown' && !counts[uploadName]) {
+      counts[uploadName] = 0;
+    }
     setNameVotes(Object.entries(counts).map(([suggested_name, count]) => ({ suggested_name, count })).sort((a, b) => b.count - a.count));
   }
 
