@@ -13,6 +13,7 @@ export default function PosterPage() {
   const [phone, setPhone] = useState('');
   const [editingPhone, setEditingPhone] = useState(false);
   const [catId, setCatId] = useState<string | null>(null);
+  const [lastSeenAddress, setLastSeenAddress] = useState<string | null>(null);
 
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get('catId');
@@ -24,7 +25,22 @@ export default function PosterPage() {
     ]).then(([{ data: catData, error: catErr }, { data: sightings }]) => {
       if (catErr || !catData) { setError('Cat not found.'); }
       else setCat(catData);
-      if (sightings?.[0]) setSighting(sightings[0]);
+      const s = sightings?.[0];
+      if (s) {
+        setSighting(s);
+        if (s.address) {
+          setLastSeenAddress(s.address);
+        } else if (s.lat && s.lng) {
+          fetch(`https://nominatim.openstreetmap.org/reverse?lat=${s.lat}&lon=${s.lng}&format=json`)
+            .then(r => r.json())
+            .then(data => {
+              const addr = data.address || {};
+              const parts = [addr.road, addr.neighbourhood || addr.suburb || addr.quarter, addr.city || addr.town || addr.village].filter(Boolean);
+              setLastSeenAddress(parts.length ? parts.join(', ') : `${s.lat.toFixed(4)}, ${s.lng.toFixed(4)}`);
+            })
+            .catch(() => setLastSeenAddress(`${s.lat.toFixed(4)}, ${s.lng.toFixed(4)}`));
+        }
+      }
       setLoading(false);
     });
   }, []);
@@ -62,9 +78,7 @@ export default function PosterPage() {
   const lostDate = cat.updated_at
     ? new Date(cat.updated_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
     : new Date(cat.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-  const lastSeenLocation = sighting?.address || (sighting?.lat && sighting?.lng
-    ? `${sighting.lat.toFixed(4)}, ${sighting.lng.toFixed(4)}`
-    : null);
+  const lastSeenLocation = lastSeenAddress;
 
   const details = [
     a.gender && a.gender !== 'Unknown' && ['Gender', a.gender],
